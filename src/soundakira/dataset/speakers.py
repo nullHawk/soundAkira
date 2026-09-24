@@ -67,7 +67,9 @@ def local_centroid(
     return centroid, e @ centroid
 
 
-def cluster_centroids(centroids: np.ndarray, threshold: float, linkage: str = "average") -> np.ndarray:
+def cluster_centroids(
+    centroids: np.ndarray, threshold: float, linkage: str = "average"
+) -> np.ndarray:
     """Agglomerative clustering with a cosine-distance cut. Returns labels 0..k-1."""
     n = len(centroids)
     if n == 0:
@@ -145,17 +147,22 @@ class SpeakerRegistry:
         return cls(path, data["next_id"], {int(k): v for k, v in data["speakers"].items()})
 
     def save(self) -> None:
-        write_json(self.path, {
-            "next_id": self.next_id,
-            "speakers": {str(k): v for k, v in sorted(self.speakers.items())},
-        })
+        write_json(
+            self.path,
+            {
+                "next_id": self.next_id,
+                "speakers": {str(k): v for k, v in sorted(self.speakers.items())},
+            },
+        )
 
     def assign(self, clusters: list[Cluster], match_similarity: float) -> list[int]:
         """Stable IDs: greedy one-to-one matching on (shared members, similarity)."""
         old_ids = sorted(self.speakers)
         pairs: list[tuple[int, float, int, int]] = []
         if old_ids and clusters:
-            old_c = l2norm(np.array([self.speakers[i]["centroid"] for i in old_ids], dtype=np.float64))
+            old_c = l2norm(
+                np.array([self.speakers[i]["centroid"] for i in old_ids], dtype=np.float64)
+            )
             new_c = l2norm(np.stack([c.centroid for c in clusters]).astype(np.float64))
             sims = new_c @ old_c.T
             old_members = [set(self.speakers[i]["members"]) for i in old_ids]

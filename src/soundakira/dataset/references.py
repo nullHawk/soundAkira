@@ -71,8 +71,16 @@ def build_reference_pool(
         if spk is None:
             continue
         if cfg.min_duration <= seg.duration <= cfg.max_duration:
-            ref = Reference(seg.segment_id, seg.segment_id, seg.source_id, spk,
-                            seg.start, seg.end, seg.text, dict(seg.metrics))
+            ref = Reference(
+                seg.segment_id,
+                seg.segment_id,
+                seg.source_id,
+                spk,
+                seg.start,
+                seg.end,
+                seg.text,
+                dict(seg.metrics),
+            )
         elif seg.duration > cfg.max_duration and cfg.derive_from_long_segments:
             prefix = derive_prefix(seg, cfg.min_duration, cfg.max_duration)
             if prefix is None:
@@ -85,8 +93,16 @@ def build_reference_pool(
             probs = [w.prob for w in words if w.prob is not None and w.kind == "word"]
             if probs:
                 metrics["asr_confidence"] = float(np.mean(probs))
-            ref = Reference(f"{seg.segment_id}-ref", seg.segment_id, seg.source_id, spk,
-                            seg.start, round(end, 3), text, metrics)
+            ref = Reference(
+                f"{seg.segment_id}-ref",
+                seg.segment_id,
+                seg.source_id,
+                spk,
+                seg.start,
+                round(end, 3),
+                text,
+                metrics,
+            )
         else:
             continue
         reason = first_failure(ref.metrics, cfg.filters)
@@ -113,7 +129,8 @@ def assign_reference(
     """Best-ranked valid reference; ties among the top-k are spread
     deterministically so one clip doesn't prompt every utterance."""
     valid = [
-        r for r in pool.get(speaker_id, [])
+        r
+        for r in pool.get(speaker_id, [])
         if r.parent_id != target.segment_id
         and not (r.source_id == target.source_id and r.start < target.end and target.start < r.end)
     ]

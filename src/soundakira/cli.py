@@ -28,6 +28,13 @@ from soundakira.config import PipelineConfig, default_config_text, load_config
 app = typer.Typer(add_completion=False, no_args_is_help=True, help=__doc__)
 log = logging.getLogger("soundakira")
 
+
+def _fail(e: Exception) -> typer.Exit:
+    """Configuration and dependency errors: one clear line, no traceback."""
+    typer.secho(f"error: {e}", fg=typer.colors.RED, err=True)
+    return typer.Exit(2)
+
+
 ConfigOpt = Annotated[Path | None, typer.Option("--config", "-c", help="YAML config file.")]
 SetOpt = Annotated[
     list[str] | None,
@@ -121,8 +128,13 @@ def process(
     verbose: VerboseOpt = False,
 ) -> None:
     """Run the per-source stages (fetch -> ... -> embed). Safe to interrupt and re-run."""
+    from soundakira.registry import ComponentError
+
     cfg = _setup(config, set_, verbose)
-    failed = _process(cfg, inputs, shard, until, force)
+    try:
+        failed = _process(cfg, inputs, shard, until, force)
+    except (ComponentError, FileNotFoundError, ValueError) as e:
+        raise _fail(e) from e
     raise typer.Exit(1 if failed else 0)
 
 
@@ -135,9 +147,13 @@ def build(
 ) -> None:
     """Cluster global speakers, pick references, and export the dataset."""
     from soundakira.dataset.build import build_dataset
+    from soundakira.registry import ComponentError
 
     cfg = _setup(config, set_, verbose)
-    report = build_dataset(cfg, clean=clean)
+    try:
+        report = build_dataset(cfg, clean=clean)
+    except (ComponentError, RuntimeError) as e:
+        raise _fail(e) from e
     typer.echo(json.dumps(report.to_dict(), indent=2))
 
 
@@ -150,10 +166,15 @@ def run(
 ) -> None:
     """process + build in one go."""
     from soundakira.dataset.build import build_dataset
+    from soundakira.registry import ComponentError
 
     cfg = _setup(config, set_, verbose)
-    _process(cfg, inputs, None, None, None)
-    typer.echo(json.dumps(build_dataset(cfg).to_dict(), indent=2))
+    try:
+        _process(cfg, inputs, None, None, None)
+        report = build_dataset(cfg)
+    except (ComponentError, FileNotFoundError, ValueError, RuntimeError) as e:
+        raise _fail(e) from e
+    typer.echo(json.dumps(report.to_dict(), indent=2))
 
 
 @app.command()

@@ -74,7 +74,13 @@ class Stage(ABC):
     # -- execution -------------------------------------------------------------
     def setup(self) -> None:
         for c in self.components:
-            c.load()
+            try:
+                c.load()
+            except ImportError as e:
+                raise registry.ComponentError(
+                    f"{c.kind} {c.name!r} (stage {self.name}) is missing a dependency: {e}. "
+                    "Run `soundakira doctor` for install hints."
+                ) from e
 
     def teardown(self) -> None:
         for c in self.components:

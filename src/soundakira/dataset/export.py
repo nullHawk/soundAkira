@@ -32,7 +32,9 @@ def export_clip(job: ClipJob) -> str:
         return "skipped"
     audio, sr = read_audio(Path(job.src), job.start, job.end)
     audio = resample(audio, sr, job.sample_rate)
-    audio = normalize(apply_fade(audio, job.sample_rate, job.fade_ms), job.normalize_mode, job.normalize_db)
+    audio = normalize(
+        apply_fade(audio, job.sample_rate, job.fade_ms), job.normalize_mode, job.normalize_db
+    )
     write_audio(dst, audio, job.sample_rate)
     return "written"
 
@@ -43,8 +45,13 @@ def run_clip_jobs(jobs: Sequence[ClipJob], workers: int) -> None:
             export_clip(job)
         return
     with ProcessPoolExecutor(workers) as pool:
-        for _ in tqdm(pool.map(export_clip, jobs, chunksize=16), total=len(jobs),
-                      desc="export", unit="clip", leave=False):
+        for _ in tqdm(
+            pool.map(export_clip, jobs, chunksize=16),
+            total=len(jobs),
+            desc="export",
+            unit="clip",
+            leave=False,
+        ):
             pass
 
 

@@ -143,3 +143,21 @@ def test_force_reruns_stage(tmp_path, corpus):
     assert summary.counts["vad"]["done"] == 2
     assert summary.counts["diarize"]["cached"] == 2
     assert summary.counts["transcribe"]["done"] == 2
+
+
+def test_missing_backend_dependency_is_a_clear_error(tmp_path, corpus):
+    from soundakira.components.base import Enhancer
+    from soundakira.registry import ComponentError, register
+
+    @register("enhancer", "needs_missing_dep")
+    class Broken(Enhancer):
+        def load(self):
+            import definitely_not_installed  # noqa: F401
+
+        def process(self, audio, sr):
+            return audio
+
+    cfg = _config(tmp_path, ["enhance.chain=[{name: needs_missing_dep}]"])
+    runner = Runner(cfg)
+    with pytest.raises(ComponentError, match="missing a dependency"):
+        runner.run(runner.prepare(resolve_inputs([str(corpus)])))
