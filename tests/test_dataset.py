@@ -3,7 +3,11 @@ import numpy as np
 from soundakira.config import FilterRule, ReferenceConfig
 from soundakira.dataset.build import choose_test_speakers
 from soundakira.dataset.filters import first_failure
-from soundakira.dataset.references import assign_reference, build_reference_pool, derive_prefix
+from soundakira.dataset.references import (
+    assign_reference,
+    build_reference_pool,
+    derive_excerpt,
+)
 from soundakira.dataset.speakers import (
     Cluster,
     SpeakerRegistry,
@@ -92,13 +96,30 @@ def test_anchors_name_and_merge_clusters():
     assert named[0].members == ["a:0", "b:0"]
 
 
-def test_derive_prefix_prefers_sentence_end():
+def test_derive_excerpt_prefers_sentence_end():
     words = [
         Word(f" w{i}" + ("." if i == 5 else ""), i * 1.0, i * 1.0 + 0.8, 0.9) for i in range(30)
     ]
     s = seg("x", "src", 0.0, 30.0, words=words)
-    end, prefix = derive_prefix(s, 4, 12)
-    assert prefix[-1].text == " w5." and 5.8 <= end <= 5.93
+    start, end, prefix = derive_excerpt(s, 4, 12)
+    assert start == 0.0 and prefix[-1].text == " w5." and 5.8 <= end <= 5.93
+
+
+def test_derive_excerpt_skips_leading_fragment():
+    # Segment starts mid-sentence ("...on it.") -> the prompt starts at "Then".
+    text = ["on", "it.", "Then", "we", "left", "the", "house", "early.", "And", "then"]
+    words = [Word(" " + t, i * 1.0, i * 1.0 + 0.8, 0.9) for i, t in enumerate(text)]
+    s = seg(
+        "x",
+        "src",
+        0.0,
+        10.0,
+        words=words,
+        metrics={"asr_confidence": 0.9, "speaker_similarity": 0.9, "sentence_start": 0.0},
+    )
+    start, _end, excerpt = derive_excerpt(s, 4, 8)
+    assert excerpt[0].text == " Then" and excerpt[-1].text == " early."
+    assert 1.8 < start < 2.0
 
 
 def test_reference_assignment_avoids_leakage_and_prefers_other_source():

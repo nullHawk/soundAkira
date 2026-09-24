@@ -5,9 +5,9 @@ Each target utterance gets a reference clip of the same speaker that:
 - preferably comes from another source, so the model learns the voice and
   not the room, microphone or episode.
 
-Short segments are reference candidates. So are prefixes cut at word
-boundaries from long segments, because a speaker who only has long turns
-still needs 4-12 s prompts.
+Short segments are reference candidates. So are word-aligned excerpts of
+long segments, because a speaker who only has long turns still needs 4-12 s
+prompts. Every prompt starts at a sentence start.
 """
 
 from __future__ import annotations
@@ -40,13 +40,27 @@ class Reference:
         return self.end - self.start
 
 
-def derive_prefix(seg: Segment, min_d: float, max_d: float) -> tuple[float, list[Word]] | None:
-    """Longest word-aligned prefix of `seg` within [min_d, max_d], preferring a
-    sentence end. Returns (end_time, words)."""
+def derive_excerpt(
+    seg: Segment, min_d: float, max_d: float
+) -> tuple[float, float, list[Word]] | None:
+    """Word-aligned excerpt of `seg` lasting [min_d, max_d] seconds, ending at a
+    sentence end where possible. If the segment starts mid-sentence
+    (`sentence_start == 0`), the excerpt starts at its first sentence start
+    instead, because a prompt that begins mid-phrase teaches the model odd
+    onsets. Returns (start, end, words), or None if no excerpt fits."""
     words = seg.words
+    first, start = 0, seg.start
+    if seg.metrics.get("sentence_start", 1.0) < 1.0:
+        for k in range(1, len(words)):
+            if words[k - 1].kind == "word" and ends_sentence(words[k - 1].text):
+                first, start = k, max(words[k - 1].end + 0.03, words[k].start - 0.12)
+                break
+        else:
+            return None
     best: tuple[int, float, bool] | None = None  # (index, dur, sentence_end)
-    for k, w in enumerate(words):
-        dur = w.end - seg.start
+    for k in range(first, len(words)):
+        w = words[k]
+        dur = w.end - start
         if dur > max_d:
             break
         if dur >= min_d and w.kind == "word":
@@ -58,7 +72,7 @@ def derive_prefix(seg: Segment, min_d: float, max_d: float) -> tuple[float, list
     k = best[0]
     nxt = words[k + 1].start - 0.03 if k + 1 < len(words) else seg.end
     end = min(words[k].end + 0.12, max(words[k].end, nxt))
-    return end, words[: k + 1]
+    return start, end, words[first : k + 1]
 
 
 def build_reference_pool(
@@ -70,7 +84,8 @@ def build_reference_pool(
         spk = speaker_of.get(seg.segment_id)
         if spk is None:
             continue
-        if cfg.min_duration <= seg.duration <= cfg.max_duration:
+        whole_ok = seg.metrics.get("sentence_start", 1.0) >= 1.0
+        if cfg.min_duration <= seg.duration <= cfg.max_duration and whole_ok:
             ref = Reference(
                 seg.segment_id,
                 seg.segment_id,
@@ -81,15 +96,18 @@ def build_reference_pool(
                 seg.text,
                 dict(seg.metrics),
             )
-        elif seg.duration > cfg.max_duration and cfg.derive_from_long_segments:
-            prefix = derive_prefix(seg, cfg.min_duration, cfg.max_duration)
-            if prefix is None:
+        elif seg.duration >= cfg.min_duration and (
+            cfg.derive_from_long_segments or seg.duration <= cfg.max_duration
+        ):
+            excerpt = derive_excerpt(seg, cfg.min_duration, cfg.max_duration)
+            if excerpt is None:
                 continue
-            end, words = prefix
+            start, end, words = excerpt
             text = join_words(words)
             metrics = dict(seg.metrics)
-            metrics["duration"] = end - seg.start
-            metrics["chars_per_sec"] = spoken_char_count(text) / (end - seg.start)
+            metrics["duration"] = end - start
+            metrics["chars_per_sec"] = spoken_char_count(text) / (end - start)
+            metrics["sentence_start"] = 1.0
             probs = [w.prob for w in words if w.prob is not None and w.kind == "word"]
             if probs:
                 metrics["asr_confidence"] = float(np.mean(probs))
@@ -98,7 +116,7 @@ def build_reference_pool(
                 seg.segment_id,
                 seg.source_id,
                 spk,
-                seg.start,
+                round(start, 3),
                 round(end, 3),
                 text,
                 metrics,
