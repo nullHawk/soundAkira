@@ -74,8 +74,14 @@ class Runner:
             if not rec or rec.get("status") != "done":
                 return None
             upstream[req] = rec["fingerprint"]
-        return stable_hash({"stage": stage.name, "version": stage.version,
-                            "identity": identity, "upstream": upstream})
+        return stable_hash(
+            {
+                "stage": stage.name,
+                "version": stage.version,
+                "identity": identity,
+                "upstream": upstream,
+            }
+        )
 
     def run(
         self,
@@ -102,8 +108,12 @@ class Runner:
                     summary.add(stage.name, "blocked")
                     continue
                 rec = ws.stage_record(stage.name)
-                if (rec and rec.get("status") == "done" and rec.get("fingerprint") == fp
-                        and all(p.exists() for p in stage.outputs(ws))):
+                if (
+                    rec
+                    and rec.get("status") == "done"
+                    and rec.get("fingerprint") == fp
+                    and all(p.exists() for p in stage.outputs(ws))
+                ):
                     summary.add(stage.name, "cached")
                     continue
                 pending.append((ws, fp))
@@ -139,14 +149,25 @@ class Runner:
         except Exception as e:
             log.error("[%s] stage %s failed: %s", ws.source_id, stage.name, e)
             log.debug("traceback", exc_info=True)
-            ws.update_stage(stage.name, {
-                "status": "failed", "fingerprint": fp, "finished_at": now_iso(),
-                "error": f"{type(e).__name__}: {e}",
-                "traceback": traceback.format_exc(limit=8)[-4000:],
-            })
+            ws.update_stage(
+                stage.name,
+                {
+                    "status": "failed",
+                    "fingerprint": fp,
+                    "finished_at": now_iso(),
+                    "error": f"{type(e).__name__}: {e}",
+                    "traceback": traceback.format_exc(limit=8)[-4000:],
+                },
+            )
             return "failed"
-        ws.update_stage(stage.name, {
-            "status": "done", "fingerprint": fp, "finished_at": now_iso(),
-            "elapsed_s": round(time.monotonic() - t0, 2), "stats": stats,
-        })
+        ws.update_stage(
+            stage.name,
+            {
+                "status": "done",
+                "fingerprint": fp,
+                "finished_at": now_iso(),
+                "elapsed_s": round(time.monotonic() - t0, 2),
+                "stats": stats,
+            },
+        )
         return "done"

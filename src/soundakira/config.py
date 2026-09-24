@@ -58,7 +58,9 @@ class ExtractConfig(_Strict):
 class EnhanceConfig(_Strict):
     chain: list[ComponentSpec] = Field(
         default_factory=lambda: [
-            ComponentSpec(name="roformer", params={"model": "model_bs_roformer_ep_317_sdr_12.9755.ckpt"})
+            ComponentSpec(
+                name="roformer", params={"model": "model_bs_roformer_ep_317_sdr_12.9755.ckpt"}
+            )
         ]
     )
     chunk_seconds: float = 300.0
@@ -101,6 +103,9 @@ class SpeakerConfig(_Strict):
     linkage: Literal["average", "complete", "single"] = "average"
     purity_threshold: float = 0.45
     min_local_duration: float = 20.0
+    registry_match_similarity: float = 0.6
+    anchors_dir: Path | None = None
+    anchor_threshold: float = 0.55
 
 
 def _default_target_filters() -> list[FilterRule]:

@@ -40,10 +40,13 @@ class PyannoteDiarizer(Diarizer):
         from pyannote.audio import Pipeline
 
         self._torch = torch
-        self._pipeline = load_pretrained(Pipeline.from_pretrained, self.params.model, self.ctx.hf_token)
+        self._pipeline = load_pretrained(
+            Pipeline.from_pretrained, self.params.model, self.ctx.hf_token
+        )
         if self._pipeline is None:
             raise RuntimeError(
-                f"could not load {self.params.model}: accept its terms on huggingface.co and set HF_TOKEN"
+                f"could not load {self.params.model}: "
+                "accept its terms on huggingface.co and set HF_TOKEN"
             )
         self._pipeline.to(torch.device(resolve_device(self.ctx.device)))
 

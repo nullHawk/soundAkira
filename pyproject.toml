@@ -69,7 +69,13 @@ src = ["src", "tests"]
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "B", "UP", "SIM", "RUF"]
-ignore = ["RUF001", "RUF002", "RUF003"]  # unicode punctuation (Devanagari danda etc.) is intentional
+ignore = [
+    "RUF001", "RUF002", "RUF003",  # unicode punctuation (Devanagari danda etc.) is intentional
+    "B905", "RUF005", "RUF007", "RUF046",
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["SIM115"]
 
 [tool.mypy]
 python_version = "3.10"

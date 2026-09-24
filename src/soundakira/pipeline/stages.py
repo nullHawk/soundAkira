@@ -232,8 +232,13 @@ class VadStage(Stage):
         sr = vad.sample_rate  # type: ignore[attr-defined]
         spans = vad.detect(_load_analysis(ws, sr), sr)  # type: ignore[attr-defined]
         speech = sum(s.duration for s in spans)
-        write_json(ws.vad_json, {"speech": [[round(s.start, 3), round(s.end, 3)] for s in spans],
-                                 "speech_duration": speech})
+        write_json(
+            ws.vad_json,
+            {
+                "speech": [[round(s.start, 3), round(s.end, 3)] for s in spans],
+                "speech_duration": speech,
+            },
+        )
         return {"speech_duration": round(speech, 1), "num_regions": len(spans)}
 
 
@@ -253,10 +258,13 @@ class DiarizeStage(Stage):
         assert isinstance(diarizer, Diarizer)
         turns = diarizer.diarize(_load_analysis(ws, diarizer.sample_rate), diarizer.sample_rate)
         speakers = sorted({t.speaker for t in turns})
-        write_json(ws.diarization_json, {
-            "num_speakers": len(speakers),
-            "turns": [[round(t.start, 3), round(t.end, 3), t.speaker] for t in turns],
-        })
+        write_json(
+            ws.diarization_json,
+            {
+                "num_speakers": len(speakers),
+                "turns": [[round(t.start, 3), round(t.end, 3), t.speaker] for t in turns],
+            },
+        )
         return {"num_speakers": len(speakers), "num_turns": len(turns)}
 
 
@@ -309,7 +317,10 @@ class SegmentStage(Stage):
         transcript = Transcript.from_dict(read_json(ws.transcript_json))
         turns = [Turn(s, e, spk) for s, e, spk in read_json(ws.diarization_json)["turns"]]
         segments = build_segments(
-            ws.source_id, transcript, turns, _load_speech(ws),
+            ws.source_id,
+            transcript,
+            turns,
+            _load_speech(ws),
             audio_duration(ws.clean_audio),
             SegmentationParams(**self.cfg.segmentation.model_dump()),
         )
@@ -370,7 +381,8 @@ class EmbedStage(Stage):
         embedder = self.components[0]
         assert isinstance(embedder, SpeakerEmbedder)
         segments = load_segments(ws)
-        ids, vecs = [], []
+        ids: list[str] = []
+        vecs: list[np.ndarray] = []
         for i in range(0, len(segments), self.batch_size):
             batch = segments[i : i + self.batch_size]
             clips = [_segment_clip(ws, s, embedder.sample_rate)[0] for s in batch]
@@ -390,7 +402,14 @@ def load_embeddings(ws: SourceWorkspace) -> dict[str, np.ndarray]:
 
 
 STAGES: list[type[Stage]] = [
-    FetchStage, ExtractStage, EnhanceStage, VadStage, DiarizeStage,
-    TranscribeStage, SegmentStage, ScoreStage, EmbedStage,
+    FetchStage,
+    ExtractStage,
+    EnhanceStage,
+    VadStage,
+    DiarizeStage,
+    TranscribeStage,
+    SegmentStage,
+    ScoreStage,
+    EmbedStage,
 ]
 STAGE_NAMES = [s.name for s in STAGES]

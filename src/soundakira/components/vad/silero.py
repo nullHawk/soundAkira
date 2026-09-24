@@ -33,9 +33,13 @@ class SileroVAD(VAD):
     def detect(self, audio: np.ndarray, sr: int) -> list[Span]:
         p = self.params
         stamps = self._get_ts(
-            self._torch.from_numpy(audio), self._model, sampling_rate=sr,
-            threshold=p.threshold, min_speech_duration_ms=p.min_speech_ms,
-            min_silence_duration_ms=p.min_silence_ms, speech_pad_ms=p.pad_ms,
+            self._torch.from_numpy(audio),
+            self._model,
+            sampling_rate=sr,
+            threshold=p.threshold,
+            min_speech_duration_ms=p.min_speech_ms,
+            min_silence_duration_ms=p.min_silence_ms,
+            speech_pad_ms=p.pad_ms,
         )
         # Sample indices, not return_seconds=True: that rounds to 0.1 s.
         return [Span(s["start"] / sr, s["end"] / sr) for s in stamps]

@@ -65,8 +65,10 @@ def process_file_in_chunks(
                 pos = 0  # position in y
                 if k > 0 and prev_tail is not None:
                     head = y[: len(prev_tail)]
-                    ramp = fade_in[: len(prev_tail)] if len(prev_tail) == 2 * ov else (
-                        np.linspace(0.0, 1.0, len(prev_tail), dtype=np.float32)
+                    ramp = (
+                        fade_in[: len(prev_tail)]
+                        if len(prev_tail) == 2 * ov
+                        else (np.linspace(0.0, 1.0, len(prev_tail), dtype=np.float32))
                     )
                     fout.write(np.clip(prev_tail * (1 - ramp) + head * ramp, -1, 1))
                     pos = len(prev_tail)

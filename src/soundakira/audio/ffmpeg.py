@@ -32,10 +32,18 @@ def _run(cmd: list[str]) -> str:
 
 
 def probe(path: Path) -> dict[str, Any]:
-    out = _run([
-        require_binary("ffprobe"), "-v", "error", "-print_format", "json",
-        "-show_streams", "-show_format", str(path),
-    ])
+    out = _run(
+        [
+            require_binary("ffprobe"),
+            "-v",
+            "error",
+            "-print_format",
+            "json",
+            "-show_streams",
+            "-show_format",
+            str(path),
+        ]
+    )
     return json.loads(out)
 
 
@@ -63,18 +71,20 @@ def parse_audio_streams(probe_data: dict[str, Any]) -> list[AudioStream]:
         tags = {k.lower(): v for k, v in (s.get("tags") or {}).items()}
         disp = s.get("disposition") or {}
         sr = s.get("sample_rate")
-        streams.append(AudioStream(
-            index=i,
-            codec=s.get("codec_name"),
-            channels=int(s.get("channels") or 0),
-            channel_layout=s.get("channel_layout"),
-            sample_rate=int(sr) if sr else None,
-            language=(tags.get("language") or "").lower() or None,
-            title=tags.get("title") or tags.get("handler_name"),
-            is_default=bool(disp.get("default")),
-            is_commentary=bool(disp.get("comment")),
-            is_audio_description=bool(disp.get("visual_impaired")),
-        ))
+        streams.append(
+            AudioStream(
+                index=i,
+                codec=s.get("codec_name"),
+                channels=int(s.get("channels") or 0),
+                channel_layout=s.get("channel_layout"),
+                sample_rate=int(sr) if sr else None,
+                language=(tags.get("language") or "").lower() or None,
+                title=tags.get("title") or tags.get("handler_name"),
+                is_default=bool(disp.get("default")),
+                is_commentary=bool(disp.get("comment")),
+                is_audio_description=bool(disp.get("visual_impaired")),
+            )
+        )
     return streams
 
 
@@ -123,8 +133,19 @@ def build_extract_command(
     channels: ChannelMode,
 ) -> list[str]:
     cmd = [
-        require_binary("ffmpeg"), "-nostdin", "-hide_banner", "-loglevel", "error", "-y",
-        "-i", str(src), "-map", f"0:a:{stream.index}", "-vn", "-sn", "-dn",
+        require_binary("ffmpeg"),
+        "-nostdin",
+        "-hide_banner",
+        "-loglevel",
+        "error",
+        "-y",
+        "-i",
+        str(src),
+        "-map",
+        f"0:a:{stream.index}",
+        "-vn",
+        "-sn",
+        "-dn",
     ]
     if channels == "center" and _has_center(stream):
         # Dialogue is mixed to the front-centre channel in surround mixes;
@@ -151,9 +172,25 @@ def convert_audio(src: Path, dst: Path, sample_rate: int, channels: int = 1) -> 
     """Streamed resample/downmix of an audio file (constant memory)."""
     dst.parent.mkdir(parents=True, exist_ok=True)
     tmp = dst.with_name(f".{dst.stem}.tmp{dst.suffix}")
-    _run([
-        require_binary("ffmpeg"), "-nostdin", "-hide_banner", "-loglevel", "error", "-y",
-        "-i", str(src), "-ac", str(channels), "-ar", str(sample_rate),
-        "-c:a", "flac", "-sample_fmt", "s16", str(tmp),
-    ])
+    _run(
+        [
+            require_binary("ffmpeg"),
+            "-nostdin",
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-y",
+            "-i",
+            str(src),
+            "-ac",
+            str(channels),
+            "-ar",
+            str(sample_rate),
+            "-c:a",
+            "flac",
+            "-sample_fmt",
+            "s16",
+            str(tmp),
+        ]
+    )
     os.replace(tmp, dst)

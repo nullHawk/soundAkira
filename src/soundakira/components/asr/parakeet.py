@@ -59,7 +59,11 @@ class ParakeetTranscriber(Transcriber):
                 p = tmp / f"{i:06d}.wav"
                 write_audio(p, audio[int(c.start * sr) : int(c.end * sr)], sr)
                 paths.append(str(p))
-            hyps = self._model.transcribe(paths, batch_size=self.params.batch_size, timestamps=True) if paths else []
+            hyps = (
+                self._model.transcribe(paths, batch_size=self.params.batch_size, timestamps=True)
+                if paths
+                else []
+            )
             if isinstance(hyps, tuple):  # some NeMo versions return (best, all)
                 hyps = hyps[0]
         finally:
@@ -73,8 +77,11 @@ class ParakeetTranscriber(Transcriber):
                 continue
             segments.append(TranscriptSegment(chunk.start, chunk.end, text))
             for w in (getattr(hyp, "timestamp", None) or {}).get("word", []):
-                words.append(Word(
-                    with_leading_space(w["word"], lang),
-                    chunk.start + float(w["start"]), chunk.start + float(w["end"]),
-                ))
+                words.append(
+                    Word(
+                        with_leading_space(w["word"], lang),
+                        chunk.start + float(w["start"]),
+                        chunk.start + float(w["end"]),
+                    )
+                )
         return Transcript(lang, None, words, segments, backend=f"parakeet:{self.params.model}")

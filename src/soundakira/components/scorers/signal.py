@@ -23,7 +23,9 @@ class SignalScorer(Scorer):
             energy = np.mean(audio[: n * hop].reshape(n, hop) ** 2, axis=1)
             # Loud frames vs quiet frames: speech-to-floor ratio. It is only a
             # relative ranking signal, not a calibrated SNR.
-            snr = min(100.0, _db(float(np.percentile(energy, 90))) - _db(float(np.percentile(energy, 10))))
+            snr = min(
+                100.0, _db(float(np.percentile(energy, 90))) - _db(float(np.percentile(energy, 10)))
+            )
         return {
             "rms_dbfs": _db(float(np.mean(audio**2))),
             "peak_dbfs": 20 * float(np.log10(max(peak, 1e-6))),

@@ -49,7 +49,10 @@ class FasterWhisperTranscriber(Transcriber):
         if compute == "auto":
             compute = "float16" if device == "cuda" else "int8"
         self._model = WhisperModel(
-            self.params.model, device=device, device_index=index, compute_type=compute,
+            self.params.model,
+            device=device,
+            device_index=index,
+            compute_type=compute,
             download_root=str(self.ctx.cache_dir) if self.ctx.cache_dir else None,
         )
         self._batched = (
@@ -86,16 +89,24 @@ class FasterWhisperTranscriber(Transcriber):
         words: list[Word] = []
         segments: list[TranscriptSegment] = []
         for s in seg_iter:
-            segments.append(TranscriptSegment(
-                start=float(s.start), end=float(s.end), text=s.text.strip(),
-                avg_logprob=float(s.avg_logprob), no_speech_prob=float(s.no_speech_prob),
-                compression_ratio=float(s.compression_ratio),
-            ))
+            segments.append(
+                TranscriptSegment(
+                    start=float(s.start),
+                    end=float(s.end),
+                    text=s.text.strip(),
+                    avg_logprob=float(s.avg_logprob),
+                    no_speech_prob=float(s.no_speech_prob),
+                    compression_ratio=float(s.compression_ratio),
+                )
+            )
             for w in s.words or []:
                 words.append(Word(w.word, float(w.start), float(w.end), float(w.probability)))
         return Transcript(
-            language=info.language, language_prob=float(info.language_probability),
-            words=words, segments=segments, backend=f"faster_whisper:{self.params.model}",
+            language=info.language,
+            language_prob=float(info.language_probability),
+            words=words,
+            segments=segments,
+            backend=f"faster_whisper:{self.params.model}",
         )
 
     def detect_language(

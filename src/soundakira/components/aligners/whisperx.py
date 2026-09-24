@@ -42,7 +42,9 @@ class WhisperXAligner(Aligner):
         lang = (transcript.language or self.params.fallback_language).split("-")[0]
         model, meta = self._model_for(lang)
         segs = [{"start": s.start, "end": s.end, "text": s.text} for s in transcript.segments]
-        result = self._whisperx.align(segs, model, meta, audio, self._device, return_char_alignments=False)
+        result = self._whisperx.align(
+            segs, model, meta, audio, self._device, return_char_alignments=False
+        )
         raw = result.get("word_segments", [])
         words: list[Word] = []
         for i, w in enumerate(raw):
@@ -51,11 +53,18 @@ class WhisperXAligner(Aligner):
                 # Tokens the aligner can't place (digits, symbols) get the gap
                 # between their neighbours.
                 prev_end = words[-1].end if words else 0.0
-                nxt = next((r["start"] for r in raw[i + 1 :] if r.get("start") is not None), prev_end)
+                nxt = next(
+                    (r["start"] for r in raw[i + 1 :] if r.get("start") is not None), prev_end
+                )
                 start, end = prev_end, max(prev_end, nxt)
-            words.append(Word(with_leading_space(w["word"], lang), float(start), float(end), w.get("score")))
+            words.append(
+                Word(with_leading_space(w["word"], lang), float(start), float(end), w.get("score"))
+            )
         return Transcript(
-            transcript.language, transcript.language_prob, words, transcript.segments,
+            transcript.language,
+            transcript.language_prob,
+            words,
+            transcript.segments,
             backend=f"{transcript.backend}+whisperx",
         )
 

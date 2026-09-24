@@ -65,7 +65,9 @@ def sanitize_words(words: list[Word]) -> list[Word]:
     return out
 
 
-def refine_words_with_vad(words: list[Word], speech: SpanIndex, min_duration: float = 0.02) -> list[Word]:
+def refine_words_with_vad(
+    words: list[Word], speech: SpanIndex, min_duration: float = 0.02
+) -> list[Word]:
     """Shrink each word to the VAD speech it actually overlaps."""
     out = []
     for w in words:
@@ -202,8 +204,16 @@ def build_segments(
     for speaker, run in build_runs(words, speakers, overlapped, params.max_pause):
         for piece in split_run(words, run, params.max_duration, params.preferred_min_duration):
             seg = _make_segment(
-                source_id, speaker, piece, words, transcript, turns_by_speaker,
-                speech_index, overlap_index, total_duration, params,
+                source_id,
+                speaker,
+                piece,
+                words,
+                transcript,
+                turns_by_speaker,
+                speech_index,
+                overlap_index,
+                total_duration,
+                params,
             )
             if seg is not None:
                 segments.append(seg)

@@ -32,10 +32,29 @@ from soundakira.utils.text import normalize_language
 
 log = logging.getLogger(__name__)
 
-MEDIA_EXTENSIONS = frozenset({
-    ".mp4", ".mkv", ".mov", ".avi", ".webm", ".m4v", ".ts", ".flv", ".wmv", ".mpg", ".mpeg",
-    ".wav", ".flac", ".mp3", ".m4a", ".aac", ".ogg", ".opus", ".wma",
-})
+MEDIA_EXTENSIONS = frozenset(
+    {
+        ".mp4",
+        ".mkv",
+        ".mov",
+        ".avi",
+        ".webm",
+        ".m4v",
+        ".ts",
+        ".flv",
+        ".wmv",
+        ".mpg",
+        ".mpeg",
+        ".wav",
+        ".flac",
+        ".mp3",
+        ".m4a",
+        ".aac",
+        ".ogg",
+        ".opus",
+        ".wma",
+    }
+)
 MANIFEST_EXTENSIONS = frozenset({".txt", ".csv", ".tsv", ".jsonl", ".list"})
 
 _YT_ID = re.compile(r"^[A-Za-z0-9_-]{11}$")
@@ -184,7 +203,11 @@ def resolve_inputs(
         path = Path(item).expanduser()
         if path.is_dir():
             for p in sorted(path.rglob("*")):
-                if p.is_file() and p.suffix.lower() in MEDIA_EXTENSIONS and not p.name.startswith("."):
+                if (
+                    p.is_file()
+                    and p.suffix.lower() in MEDIA_EXTENSIONS
+                    and not p.name.startswith(".")
+                ):
                     add(local_source(p, language))
         elif path.is_file() and path.suffix.lower() in MANIFEST_EXTENSIONS:
             for uri, lang in _read_manifest(path):

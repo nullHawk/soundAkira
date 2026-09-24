@@ -1,18 +1,18 @@
 """On-disk layout for per-source intermediate artifacts.
 
-    <work_dir>/
-      sources/<source_id>/
-        manifest.json        stage status, fingerprints, stats, errors
-        source.json          the resolved Source
-        media.json           fetched media path + metadata
-        extract.json         chosen audio stream, duration
-        audio/source.flac    decoded dialogue track (44.1 kHz)
-        audio/clean.flac     enhanced mono (vocals, denoised)
-        audio/analysis.flac  16 kHz mono for VAD / diarization / ASR / embeddings
-        vad.json  diarization.json  transcript.json
-        segments.jsonl  scores.json  embeddings.npz
-      speakers/registry.json  global speaker registry (stable IDs across builds)
-      logs/
+<work_dir>/
+  sources/<source_id>/
+    manifest.json        stage status, fingerprints, stats, errors
+    source.json          the resolved Source
+    media.json           fetched media path + metadata
+    extract.json         chosen audio stream, duration
+    audio/source.flac    decoded dialogue track (44.1 kHz)
+    audio/clean.flac     enhanced mono (vocals, denoised)
+    audio/analysis.flac  16 kHz mono for VAD / diarization / ASR / embeddings
+    vad.json  diarization.json  transcript.json
+    segments.jsonl  scores.json  embeddings.npz
+  speakers/registry.json  global speaker registry (stable IDs across builds)
+  logs/
 """
 
 from __future__ import annotations

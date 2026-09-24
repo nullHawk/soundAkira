@@ -38,14 +38,23 @@ class DemucsEnhancer(Enhancer):
 
         torch = self._torch
         channels = self._model.audio_channels
-        x = audio if audio.shape[0] == channels else np.repeat(audio.mean(0, keepdims=True), channels, 0)
+        x = (
+            audio
+            if audio.shape[0] == channels
+            else np.repeat(audio.mean(0, keepdims=True), channels, 0)
+        )
         wav = torch.from_numpy(np.ascontiguousarray(x))
         ref = wav.mean(0)
         mean, std = ref.mean(), ref.std() + 1e-8
         with torch.inference_mode():
             sources = apply_model(
-                self._model, ((wav - mean) / std)[None], device=self._device,
-                shifts=self.params.shifts, split=True, overlap=self.params.overlap, progress=False,
+                self._model,
+                ((wav - mean) / std)[None],
+                device=self._device,
+                shifts=self.params.shifts,
+                split=True,
+                overlap=self.params.overlap,
+                progress=False,
             )[0]
         stem = sources[self._model.sources.index(self.params.stem)] * std + mean
         return stem.cpu().numpy().astype(np.float32)
