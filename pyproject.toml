@@ -55,7 +55,7 @@ soundakira = "soundakira.cli:app"
 #   "asr.my_model" = "my_pkg.asr:MyTranscriber"
 
 [project.urls]
-Homepage = "https://github.com/rumik-ai/soundakira"
+Homepage = "https://github.com/nullHawk/soundAkira"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/soundakira"]
