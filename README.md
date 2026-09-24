@@ -19,7 +19,7 @@ video / URL / playlist
 | extract | Picks the dialogue track: skips commentary and audio description, prefers your language, can isolate the 5.1 centre channel | ffmpeg |
 | enhance | Removes music, effects and noise, keeping voices. Streams in chunks with crossfades, so any length works | BS-RoFormer ([audio-separator](https://github.com/nomadkaraoke/python-audio-separator)); Demucs and DeepFilterNet optional |
 | vad | Finds speech regions | Silero VAD |
-| diarize | Who spoke when, within one source | pyannote `speaker-diarization-community-1` |
+| diarize | Who spoke when, within one source | pyannote `speaker-diarization-community-1`; `cluster` fallback (windowed embeddings + clustering, no gated models) |
 | transcribe | Text with word timestamps, per-language routing | faster-whisper `large-v3`; NVIDIA Parakeet optional; WhisperX forced alignment optional |
 | segment | Builds single-speaker utterances cut on word boundaries. Drops overlapping speech and splits at sentence ends | built in |
 | score / embed | Quality metrics and speaker embeddings for every segment | signal stats (DNSMOS optional); pyannote WeSpeaker |

@@ -166,3 +166,27 @@ def test_stage_that_cannot_load_fails_cleanly_and_independent_stages_continue(tm
     assert summary.counts["segment"]["blocked"] == 2  # does
     err = workspaces[0].stage_record("diarize")["error"]
     assert "missing a dependency" in err and "doctor" in err
+
+
+def test_cluster_diarizer_recovers_speakers(tmp_path):
+    from soundakira import registry
+    from soundakira.audio.io import read_audio, resample
+    from soundakira.components.base import ComponentContext
+
+    truth = fakes.synth_source(
+        tmp_path / "s.wav", [("alice", 10), ("bob", 8), ("alice", 6), ("carol", 1)]
+    )
+    audio, sr = read_audio(tmp_path / "s.wav")
+    audio = resample(audio, sr, 16000)
+    d = registry.create(
+        "diarizer",
+        "cluster",
+        {"embedder": {"name": "fake"}, "vad": {"name": "energy"}, "min_cluster_duration": 2.0},
+        ComponentContext(),
+    )
+    d.load()
+    turns = d.diarize(audio, 16000)
+    # alice/bob/alice; carol's single word is folded into a real speaker
+    assert [t.speaker for t in turns] == ["SPEAKER_00", "SPEAKER_01", "SPEAKER_00"]
+    for t, (_, start, end) in zip(turns, truth):
+        assert abs(t.start - start) < 0.2 and abs(t.end - end) < 0.8

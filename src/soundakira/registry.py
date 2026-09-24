@@ -41,6 +41,7 @@ _BUILTINS: dict[str, dict[str, str]] = {
     },
     "diarizer": {
         "pyannote": "soundakira.components.diarization.pyannote:PyannoteDiarizer",
+        "cluster": "soundakira.components.diarization.cluster:ClusterDiarizer",
     },
     "asr": {
         "faster_whisper": "soundakira.components.asr.faster_whisper:FasterWhisperTranscriber",

@@ -41,7 +41,7 @@ vad:
   params: {}
 
 diarization:
-  name: pyannote
+  name: pyannote        # pyannote | cluster (embedding clustering, no gated models)
   params: {}            # model, num_speakers, min_speakers, max_speakers
 
 asr:
