@@ -1,4 +1,5 @@
 # soundAkira
+**note**: code in this repo is vibecoded, please use with precaution
 
 **Turn videos into zero-shot TTS training data.**
 
