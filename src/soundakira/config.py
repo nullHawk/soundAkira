@@ -119,6 +119,7 @@ def _default_target_filters() -> list[FilterRule]:
         FilterRule(field="overlap_ratio", max=0.1),
         FilterRule(field="speaker_similarity", min=0.45),
         FilterRule(field="clip_ratio", max=0.001),
+        FilterRule(field="speech_prob", min=0.15),
         FilterRule(field="singing_prob", max=0.5),
     ]
 
@@ -131,6 +132,7 @@ def _default_reference_filters() -> list[FilterRule]:
         FilterRule(field="overlap_ratio", max=0.02),
         FilterRule(field="speaker_similarity", min=0.6),
         FilterRule(field="clip_ratio", max=0.001),
+        FilterRule(field="speech_prob", min=0.15),
         FilterRule(field="singing_prob", max=0.5),
     ]
 

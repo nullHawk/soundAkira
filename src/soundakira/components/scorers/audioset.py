@@ -9,7 +9,10 @@ Transformer fine-tuned on AudioSet over each clip, in 10 s windows, and reports:
 - `singing_prob`: max over windows of the strongest singing-type label
 - `music_prob`: max over windows of "Music"
 
-The default export filter drops clips with `singing_prob > 0.5`.
+The default filters drop clips with `speech_prob < 0.15` or `singing_prob > 0.5`.
+`speech_prob` is the reliable one. On an anime ending theme (vocals already
+separated), the sung lines scored speech 0.02-0.03 but singing only 0.22-0.45,
+while the lowest-scoring real dialogue in the episode scored speech 0.30.
 
 Install: ``pip install 'soundakira[quality]'`` (transformers).
 """

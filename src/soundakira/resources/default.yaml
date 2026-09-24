@@ -100,6 +100,7 @@ references:             # voice prompts for zero-shot TTS
     - {field: overlap_ratio, max: 0.02}
     - {field: speaker_similarity, min: 0.6}
     - {field: clip_ratio, max: 0.001}
+    - {field: speech_prob, min: 0.15}     # drops songs: sung vocals score ~0.02, dialogue >= 0.3
     - {field: singing_prob, max: 0.5}
 
 export:
@@ -121,6 +122,7 @@ export:
     - {field: overlap_ratio, max: 0.1}
     - {field: speaker_similarity, min: 0.45}
     - {field: clip_ratio, max: 0.001}
+    - {field: speech_prob, min: 0.15}     # drops songs: sung vocals score ~0.02, dialogue >= 0.3
     - {field: singing_prob, max: 0.5}
   split:
     test_speaker_fraction: 0.0   # hold out whole speakers for unseen-voice evaluation
