@@ -9,6 +9,7 @@
 | Non-zero stream start times, VFR video | Only the audio stream is decoded, so all timestamps are relative to that audio. |
 | No audio / near-empty audio | That source fails at `extract` with a clear error. Other sources continue. |
 | Playlists, channels | Expanded with yt-dlp flat extraction. Each video becomes its own source. |
+| YouTube bot check on cloud/datacenter IPs | The fetch fails with an actionable message: set `fetch.cookies_file`, or download elsewhere and pass local files. Other sources continue. |
 | Same file listed twice, or under two paths | Local IDs come from a content fingerprint, so duplicates collapse to one source. |
 | Interrupted runs, crashes mid-write | Every artifact is written atomically (temp file + rename). A stage counts as done only after its outputs exist. |
 | Very long sources (3 h+) | Enhancement streams in chunks with crossfades; clip reads seek. Memory stays constant. |
@@ -28,6 +29,7 @@
 
 | Case | Handling |
 |---|---|
+| Whisper drifting into lowercase, unpunctuated text | `condition_on_previous_text: true` (default). On podcast audio it cut unpunctuated segments from 10–72% to 0–5% with no loss of words. A punctuated `initial_prompt` fixes the punctuation but silently drops 7–19% of words, so it is not used. |
 | Whisper hallucination on silence or music | faster-whisper's internal VAD, `condition_on_previous_text: false`, `hallucination_silence_threshold`, and compression-ratio and log-prob fallbacks. At export: `repetition_ratio`, `speech_ratio` (text over non-speech) and `asr_confidence` filters. |
 | Word timestamps that swallow the preceding silence | Words are trimmed to VAD speech (`segmentation.refine_with_vad`). An aligner can also be configured. |
 | Backends without word confidence (Parakeet) | Confidence metrics are absent; filters with `on_missing: keep` skip them. |
@@ -42,6 +44,8 @@
 | Long monologues | Split at sentence ends, then clauses, then long pauses. The splitter prefers pieces of at least `preferred_min_duration`. |
 | Most turns shorter than 15 s | Short segments are not wasted: they form the reference-prompt pool. `dataset.json` reports the drop reasons so you can tune the length window. |
 | Mid-word cuts | Cuts only happen on word boundaries, with padding bounded by the neighbouring words. |
+| Diarization boundaries a few hundred ms off ("…apps? Multiple \| reasons.") | The speaker change is snapped to the best pause or sentence end *inside the diarization's transition zone* (`snap_speaker_changes`). An unconstrained search moved changes the wrong way. |
+| Clips starting or ending mid-sentence | Fragments of up to `trim_to_sentence` seconds are trimmed. The rest are flagged with `sentence_start` / `sentence_end`, which can be used as filters. |
 | Words just outside a diarization turn | Attached to the nearest turn within `speaker_max_distance`. Otherwise they are a hard break. |
 
 ## Speakers
@@ -67,6 +71,7 @@
 
 ## Known limitations and open work
 
+- **`cluster` diarizer (the no-gated-models fallback)** has no overlap detection, and its boundaries are only accurate to about half a hop. Snapping and trimming compensate, but pyannote is preferred when available.
 - **Speaker count per source is unknown.** pyannote estimates it. For sources with known casts, pass `diarization.params.min_speakers/max_speakers`.
 - **Cluster thresholds depend on the embedder.** Calibrate `cluster_threshold` on a few labelled sources before a large run.
 - **Code-switched speech (Hinglish).** Whisper `large-v3` tends to output a single script or translate. It needs a dedicated model behind the router.
