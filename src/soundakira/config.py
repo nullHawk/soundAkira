@@ -81,6 +81,7 @@ class AsrConfig(_Strict):
 class SegmentationConfig(_Strict):
     min_duration: float = 3.0
     max_duration: float = 30.0
+    preferred_min_duration: float = 15.0
     max_pause: float = 1.5
     pad: float = 0.15
     boundary_margin: float = 0.05
