@@ -115,6 +115,19 @@ A reference is never the target clip and never overlaps it in time. By default i
 - **Constant memory.** Enhancement streams audio in chunks, and clips are read by seeking. A three-hour film uses the same memory as a three-minute clip.
 - **Disk.** `storage.keep_download: false` and `storage.keep_source_audio: false` delete intermediates; pruned files are re-created only if needed.
 
+### Measured throughput
+
+44 minutes of podcast audio (5 videos) on one NVIDIA A10G, default settings:
+
+| Stage | Speed |
+|---|---|
+| enhance (BS-RoFormer, `overlap: 2`) | 4× real time (the bottleneck) |
+| transcribe (Whisper large-v3, beam 5) | 12× real time |
+| diarize (pyannote community-1) | 50× real time |
+| vad (Silero) | 70× real time |
+
+That is about 3 hours of source audio per GPU-hour, end to end. Batched Whisper (`configs/fast.yaml`) is about 8× faster at the cost of punctuation. Run more shards to scale out.
+
 ## Speakers across sources
 
 1. **Per source:** a speaker's centroid is a duration-weighted *medoid-initialised* mean of its segment embeddings. Segments that don't match their own speaker are flagged (`speaker_similarity`), which catches diarization mistakes.
