@@ -230,6 +230,8 @@ def doctor() -> None:
         line(
             shutil.which(binary) is not None, binary, shutil.which(binary) or "not found (required)"
         )
+    deno = shutil.which("deno")
+    line(bool(deno), "deno", deno or "not found (yt-dlp needs a JS runtime for YouTube)")
     try:
         import torch
 

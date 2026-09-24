@@ -34,6 +34,8 @@ pip install -e ".[standard]"     # yt-dlp + RoFormer + Silero + pyannote + faste
 soundakira doctor                # check ffmpeg, GPU, HF token and installed backends
 ```
 
+For YouTube, yt-dlp needs a JavaScript runtime: install [deno](https://deno.com). YouTube usually blocks cloud and datacenter IPs with a "confirm you're not a bot" check. On those machines, set `fetch.cookies_file` to an [exported cookies file](https://github.com/yt-dlp/yt-dlp/wiki/Extractors#exporting-youtube-cookies), or download elsewhere and pass local files.
+
 The pyannote models are gated. Accept the terms for
 [speaker-diarization-community-1](https://huggingface.co/pyannote/speaker-diarization-community-1) and
 [wespeaker-voxceleb-resnet34-LM](https://huggingface.co/pyannote/wespeaker-voxceleb-resnet34-LM),
