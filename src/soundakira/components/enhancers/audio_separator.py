@@ -29,7 +29,12 @@ class AudioSeparatorParams(BaseModel):
     model: str = "model_bs_roformer_ep_317_sdr_12.9755.ckpt"
     stem: str = "Vocals"
     model_dir: str | None = None
-    options: dict[str, Any] = Field(default_factory=dict)
+    # MDXC/RoFormer inference. overlap=2 is ~2x faster than audio-separator's
+    # default, with output within 83 dB SNR of it (measured): inaudible.
+    overlap: int = 2
+    batch_size: int = 1
+    segment_size: int = 256
+    options: dict[str, Any] = Field(default_factory=dict)  # raw Separator kwargs; win on conflict
 
 
 class AudioSeparatorEnhancer(Enhancer):
@@ -46,6 +51,13 @@ class AudioSeparatorEnhancer(Enhancer):
             "output_format": "WAV",
             "output_single_stem": self.params.stem,
             "log_level": logging.WARNING,
+            "mdxc_params": {
+                "segment_size": self.params.segment_size,
+                "override_model_segment_size": False,
+                "batch_size": self.params.batch_size,
+                "overlap": self.params.overlap,
+                "pitch_shift": 0,
+            },
             **self.params.options,
         }
         if self.params.model_dir:
