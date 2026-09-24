@@ -24,6 +24,7 @@ OVERRIDES = [
     "diarization.name=fake",
     "asr.name=fake",
     "speakers.embedder.name=fake",
+    "quality.scorers=[{name: signal}]",
     "speakers.min_local_duration=4",
     "segmentation.min_duration=2",
     "segmentation.max_duration=12",

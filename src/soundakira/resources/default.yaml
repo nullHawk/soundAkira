@@ -66,8 +66,10 @@ segmentation:
                                 # (metrics sentence_start/sentence_end flag the rest)
 
 quality:
-  scorers:              # signal (level/clipping/SNR estimate) | dnsmos
+  scorers:              # signal (level/clipping/SNR) | audioset (speech/singing/music) | dnsmos
     - name: signal
+      params: {}
+    - name: audioset    # catches theme songs / singing that vocal separation keeps
       params: {}
 
 speakers:
@@ -98,6 +100,7 @@ references:             # voice prompts for zero-shot TTS
     - {field: overlap_ratio, max: 0.02}
     - {field: speaker_similarity, min: 0.6}
     - {field: clip_ratio, max: 0.001}
+    - {field: singing_prob, max: 0.5}
 
 export:
   sample_rate: 24000
@@ -118,6 +121,7 @@ export:
     - {field: overlap_ratio, max: 0.1}
     - {field: speaker_similarity, min: 0.45}
     - {field: clip_ratio, max: 0.001}
+    - {field: singing_prob, max: 0.5}
   split:
     test_speaker_fraction: 0.0   # hold out whole speakers for unseen-voice evaluation
     seed: 0

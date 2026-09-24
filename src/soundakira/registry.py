@@ -57,6 +57,7 @@ _BUILTINS: dict[str, dict[str, str]] = {
     "scorer": {
         "signal": "soundakira.components.scorers.signal:SignalScorer",
         "dnsmos": "soundakira.components.scorers.dnsmos:DNSMOSScorer",
+        "audioset": "soundakira.components.scorers.audioset:AudioSetScorer",
     },
 }
 

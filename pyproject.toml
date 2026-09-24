@@ -41,8 +41,10 @@ asr = ["faster-whisper>=1.1"]
 parakeet = ["nemo_toolkit[asr]>=2.4"]
 align = ["whisperx>=3.3"]
 quality = ["torchmetrics[audio]>=1.4", "onnxruntime>=1.17", "librosa>=0.10"]
-# The default pipeline: yt-dlp + RoFormer separation + Silero + pyannote + faster-whisper.
-standard = ["soundakira[fetch,separation,vad,diarization,asr]"]
+audioset = ["transformers>=4.40"]
+# The default pipeline: yt-dlp + RoFormer separation + Silero + pyannote + faster-whisper
+# + AudioSet singing/music detection.
+standard = ["soundakira[fetch,separation,vad,diarization,asr,audioset]"]
 dev = ["pytest>=8", "ruff>=0.6", "mypy>=1.10", "pre-commit>=3.7", "types-PyYAML"]
 
 [project.scripts]

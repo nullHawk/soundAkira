@@ -266,6 +266,7 @@ def doctor() -> None:
         ("faster_whisper", "asr"),
         ("nemo", "parakeet"),
         ("whisperx", "align"),
+        ("transformers", "audioset"),
         ("torchmetrics", "quality"),
     ]:
         root = module.split(".")[0]
