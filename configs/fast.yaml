@@ -1,4 +1,6 @@
-# Fast iteration / smaller GPUs: batched turbo Whisper, no extra denoise.
+# Fast iteration / smaller GPUs: batched turbo Whisper (~8x faster ASR).
+# Trade-off: batched decoding loses most punctuation/casing. Fine for
+# exploring data, not for final TTS transcripts.
 
 asr:
   params: {model: large-v3-turbo, batch_size: 16}

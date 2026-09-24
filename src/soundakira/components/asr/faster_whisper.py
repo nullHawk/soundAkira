@@ -1,10 +1,17 @@
 """Whisper via faster-whisper (CTranslate2): multilingual, word timestamps,
 per-segment confidence stats. Install: ``pip install 'soundakira[asr]'``.
 
-The defaults lean towards dataset quality over speed. They include several
-anti-hallucination settings (no conditioning on previous text, silence-based
-hallucination skipping, compression-ratio and log-prob fallbacks), because
-hallucinated text in a TTS dataset is worse than missing text.
+The defaults lean towards dataset quality over speed.
+
+- `condition_on_previous_text=True`: without it, Whisper drifts into lowercase
+  text with no punctuation. On podcast audio, 40-80% of segments were affected,
+  against 3% with it. TTS needs punctuation and casing for prosody.
+- The hallucination risk this adds is contained by silence-based hallucination
+  skipping, compression-ratio and log-prob fallbacks, and the export-time
+  `repetition_ratio` / `speech_ratio` filters.
+- `batch_size > 0` is about 8x faster but decodes chunks independently, so
+  punctuation is lost again. Don't "fix" that with a punctuated
+  `initial_prompt`: in testing it silently dropped 7-19% of the spoken words.
 """
 
 from __future__ import annotations
@@ -27,7 +34,7 @@ class FasterWhisperParams(BaseModel):
     beam_size: int = 5
     batch_size: int = 0  # >0 uses BatchedInferencePipeline (faster, slightly less accurate)
     vad_filter: bool = True
-    condition_on_previous_text: bool = False
+    condition_on_previous_text: bool = True
     hallucination_silence_threshold: float | None = 2.0
     no_speech_threshold: float = 0.6
     compression_ratio_threshold: float = 2.4
@@ -38,6 +45,7 @@ class FasterWhisperParams(BaseModel):
 
 class FasterWhisperTranscriber(Transcriber):
     Params = FasterWhisperParams
+    version = "2"  # 2: condition_on_previous_text defaults to True
     params: FasterWhisperParams
 
     def load(self) -> None:
