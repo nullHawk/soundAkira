@@ -25,13 +25,13 @@ extract:
 
 enhance:
   # Applied in order to every chunk. Empty list = no enhancement.
-  #   roformer      : BS/Mel-RoFormer vocal isolation (removes music, SFX, most noise)
+  #   roformer      : MelBand/BS-RoFormer vocal isolation (removes music, SFX, most noise)
   #   demucs        : htdemucs_ft vocal stem
   #   deepfilternet : residual noise suppression (add after a separator)
   chain:
     - name: roformer
       params:
-        model: model_bs_roformer_ep_317_sdr_12.9755.ckpt
+        model: vocals_mel_band_roformer.ckpt
   chunk_seconds: 300.0
   overlap_seconds: 2.0
   analysis_source: clean   # audio used for VAD/diarization/ASR: clean | original

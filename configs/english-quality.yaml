@@ -11,7 +11,7 @@ extract:
 enhance:
   chain:
     - name: roformer
-      params: {model: model_bs_roformer_ep_317_sdr_12.9755.ckpt}
+      params: {model: vocals_mel_band_roformer.ckpt}
     - name: deepfilternet
       params: {atten_lim_db: 12}
 

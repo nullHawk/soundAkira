@@ -58,9 +58,7 @@ class ExtractConfig(_Strict):
 class EnhanceConfig(_Strict):
     chain: list[ComponentSpec] = Field(
         default_factory=lambda: [
-            ComponentSpec(
-                name="roformer", params={"model": "model_bs_roformer_ep_317_sdr_12.9755.ckpt"}
-            )
+            ComponentSpec(name="roformer", params={"model": "vocals_mel_band_roformer.ckpt"})
         ]
     )
     chunk_seconds: float = 300.0

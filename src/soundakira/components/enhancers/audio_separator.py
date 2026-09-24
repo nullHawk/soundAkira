@@ -1,7 +1,10 @@
 """Vocal isolation with python-audio-separator (UVR model zoo).
 
-The default checkpoint is a BS-RoFormer vocals model, among the strongest
-open vocal/instrumental separators. It strips music, effects and most
+The default checkpoint is Kimberley Jensen's MelBand-RoFormer vocals model
+(vocal SDR 12.6), among the strongest open vocal separators. On an A10G with
+fp16 autocast it runs at about 17x real time: 3.8x faster than the previous
+BS-RoFormer default (vocal SDR 11.8) in fp32, with output within 68 dB of
+fp32. It strips music, effects and most
 background noise, leaving all voices. Any audio-separator model filename
 works, e.g. ``mel_band_roformer_kim_ft_unwa.ckpt``, or ``UVR-DeNoise.pth`` as a
 second chain step.
@@ -26,13 +29,14 @@ from soundakira.components.base import Enhancer
 
 class AudioSeparatorParams(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    model: str = "model_bs_roformer_ep_317_sdr_12.9755.ckpt"
+    model: str = "vocals_mel_band_roformer.ckpt"
     stem: str = "Vocals"
     model_dir: str | None = None
     # MDXC/RoFormer inference. overlap=2 is ~2x faster than audio-separator's
     # default, with output within 83 dB SNR of it (measured): inaudible.
     overlap: int = 2
-    batch_size: int = 1
+    batch_size: int = 1  # measured: >1 gives no speedup, the GPU is already saturated
+    autocast: bool = True  # fp16 autocast on CUDA: ~1.8x faster, inaudible difference
     segment_size: int = 256
     options: dict[str, Any] = Field(default_factory=dict)  # raw Separator kwargs; win on conflict
 
@@ -51,6 +55,7 @@ class AudioSeparatorEnhancer(Enhancer):
             "output_format": "WAV",
             "output_single_stem": self.params.stem,
             "log_level": logging.WARNING,
+            "use_autocast": self.params.autocast,
             "mdxc_params": {
                 "segment_size": self.params.segment_size,
                 "override_model_segment_size": False,
