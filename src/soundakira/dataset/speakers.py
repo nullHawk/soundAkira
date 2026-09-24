@@ -13,9 +13,11 @@ To get dataset-wide speaker IDs:
    diarization split in two within a source.
 3. Anchors (optional): labelled clips of known people. Clusters that match an
    anchor are named after it, and clusters matching the same anchor are merged.
-4. Registry: new clusters are matched to the previous build's speakers (by
-   shared members, then centroid similarity), so IDs stay the same as sources
-   are added. Names edited in the registry file are kept.
+4. Registry: new clusters are matched to the previous build's speakers by
+   voice (centroid similarity), preferring ones that share members, so IDs stay
+   the same as sources are added. Shared labels alone never carry an ID over,
+   because re-diarizing a source can permute its labels. Names edited in the
+   registry file are kept.
 """
 
 from __future__ import annotations
@@ -156,7 +158,8 @@ class SpeakerRegistry:
         )
 
     def assign(self, clusters: list[Cluster], match_similarity: float) -> list[int]:
-        """Stable IDs: greedy one-to-one matching on (shared members, similarity)."""
+        """Stable IDs: greedy one-to-one matching of voices (centroid similarity
+        >= match_similarity), preferring old speakers that share members."""
         old_ids = sorted(self.speakers)
         pairs: list[tuple[int, float, int, int]] = []
         if old_ids and clusters:
@@ -169,8 +172,10 @@ class SpeakerRegistry:
             for ci, c in enumerate(clusters):
                 mem = set(c.members)
                 for oj, oid in enumerate(old_ids):
-                    shared = len(mem & old_members[oj])
-                    if shared or sims[ci, oj] >= match_similarity:
+                    # The voice must match. Member labels alone are not enough:
+                    # re-diarizing a source can permute its SPEAKER_xx labels.
+                    if sims[ci, oj] >= match_similarity:
+                        shared = len(mem & old_members[oj])
                         pairs.append((shared, float(sims[ci, oj]), ci, oid))
         pairs.sort(key=lambda p: (-p[0], -p[1], p[2], p[3]))
 

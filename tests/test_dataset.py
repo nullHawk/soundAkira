@@ -148,3 +148,16 @@ def test_test_split_is_deterministic_and_speaker_disjoint():
     assert a == choose_test_speakers(ids, 0.1, seed=1)
     assert len(a) == 10
     assert choose_test_speakers([1], 0.5, 0) == set()
+
+
+def test_registry_ignores_permuted_labels_after_rediarization(tmp_path):
+    reg = SpeakerRegistry.load(tmp_path / "r.json")
+    lex, scull = unit(1, 0, 0), unit(0, 1, 0)
+    first = reg.assign(
+        [Cluster(lex, ["ep1:S0", "ep2:S2"], 50), Cluster(scull, ["ep2:S1"], 50)], 0.6
+    )
+    # Re-diarizing ep2 swapped its labels: S2 is now Scull, S1 is now Lex.
+    second = reg.assign(
+        [Cluster(lex, ["ep1:S0", "ep2:S1"], 50), Cluster(scull, ["ep2:S2"], 50)], 0.6
+    )
+    assert second == first  # IDs follow the voices, not the labels
