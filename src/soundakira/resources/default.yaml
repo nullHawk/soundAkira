@@ -1,0 +1,125 @@
+# soundAkira pipeline configuration.
+# Every key is optional; omitted keys take these defaults. Values can reference
+# environment variables: ${VAR} or ${VAR:-default}. Override from the CLI with
+#   --set export.min_duration=10 --set device=cuda:1
+
+work_dir: work          # per-source intermediate artifacts (resumable cache)
+output_dir: dataset     # final dataset
+device: auto            # auto | cpu | cuda | cuda:N | mps
+hf_token: null          # falls back to $HF_TOKEN (pyannote models are gated)
+
+fetch:                  # remote sources (YouTube, any yt-dlp site, direct media links)
+  format: bestaudio/best  # audio only; the video track is never needed
+  workers: 4
+  cookies_file: null      # for age/region-restricted videos
+  expand_playlists: true
+  yt_dlp_options: {}      # passed straight to yt_dlp.YoutubeDL
+
+extract:
+  sample_rate: 44100    # separation models are trained at 44.1 kHz
+  channels: stereo      # stereo | mono | center (surround mixes: take the dialogue channel)
+  stream_index: null    # force an audio stream; null = auto-pick
+  prefer_languages: [eng, en]   # container language tags, used when picking the audio stream
+  skip_title_keywords: [commentary, description, descriptive]
+  workers: 4
+
+enhance:
+  # Applied in order to every chunk. Empty list = no enhancement.
+  #   roformer      : BS/Mel-RoFormer vocal isolation (removes music, SFX, most noise)
+  #   demucs        : htdemucs_ft vocal stem
+  #   deepfilternet : residual noise suppression (add after a separator)
+  chain:
+    - name: roformer
+      params:
+        model: model_bs_roformer_ep_317_sdr_12.9755.ckpt
+  chunk_seconds: 300.0
+  overlap_seconds: 2.0
+  analysis_source: clean   # audio used for VAD/diarization/ASR: clean | original
+
+vad:
+  name: silero          # silero | energy
+  params: {}
+
+diarization:
+  name: pyannote
+  params: {}            # model, num_speakers, min_speakers, max_speakers
+
+asr:
+  name: faster_whisper  # faster_whisper | parakeet | router (per-language routing)
+  params: {}            # e.g. {model: large-v3, batch_size: 16}
+  language: null        # default language hint; per-source hints come from manifests
+  aligner: null         # e.g. {name: whisperx} for tighter word boundaries
+
+segmentation:
+  min_duration: 3.0             # shortest segment kept (reference-prompt pool)
+  max_duration: 30.0            # longer runs are split at sentence/pause boundaries
+  preferred_min_duration: 15.0  # splitter prefers pieces at least this long
+  max_pause: 1.5                # a longer pause ends the utterance
+  pad: 0.15                     # silence padding around the words (never into other speech)
+  boundary_margin: 0.05
+  speaker_max_distance: 0.3     # attach words just outside a diarization turn
+  overlap_word_fraction: 0.3    # words this much inside overlapped speech break utterances
+  refine_with_vad: true         # trim word boundaries to VAD speech
+
+quality:
+  scorers:              # signal (level/clipping/SNR estimate) | dnsmos
+    - name: signal
+      params: {}
+
+speakers:
+  scope: global         # global = same person across sources shares one ID; source = per source
+  embedder:
+    name: pyannote
+    params: {}
+  cluster_threshold: 0.45       # cosine distance for merging local speakers; lower = stricter
+  linkage: average
+  purity_threshold: 0.45        # segments less similar to their own speaker are flagged
+  min_local_duration: 20.0      # a diarized speaker needs this much clean speech to be kept
+  registry_match_similarity: 0.6  # keeps speaker IDs stable across rebuilds
+  anchors_dir: null             # optional: <dir>/<speaker name>/*.wav to name/merge speakers
+  anchor_threshold: 0.55
+
+references:             # voice prompts for zero-shot TTS
+  min_duration: 4.0
+  max_duration: 12.0
+  derive_from_long_segments: true   # cut prompts from long segments at word boundaries
+  prefer_other_source: true         # prompt from a different video than the target
+  rank_by: [speaker_similarity, asr_confidence]
+  top_k: 5
+  require: true                     # drop targets with no valid reference
+  filters:
+    - {field: asr_confidence, min: 0.7}
+    - {field: chars_per_sec, min: 4.0, max: 25.0}
+    - {field: speech_ratio, min: 0.6}
+    - {field: overlap_ratio, max: 0.02}
+    - {field: speaker_similarity, min: 0.6}
+    - {field: clip_ratio, max: 0.001}
+
+export:
+  sample_rate: 24000
+  format: wav           # wav | flac
+  min_duration: 15.0    # target utterance length window
+  max_duration: 30.0
+  languages: null       # e.g. [en]; null = keep all
+  fade_ms: 10.0
+  normalize:
+    mode: peak          # none | peak | rms
+    target_db: -1.0
+  # Any metric column can be filtered: {field, min, max, on_missing: keep|drop}
+  filters:
+    - {field: asr_confidence, min: 0.55}
+    - {field: chars_per_sec, min: 4.0, max: 25.0}
+    - {field: repetition_ratio, max: 0.4}
+    - {field: speech_ratio, min: 0.5}
+    - {field: overlap_ratio, max: 0.1}
+    - {field: speaker_similarity, min: 0.45}
+    - {field: clip_ratio, max: 0.001}
+  split:
+    test_speaker_fraction: 0.0   # hold out whole speakers for unseen-voice evaluation
+    seed: 0
+  workers: 4
+  write_jsonl: true
+
+storage:
+  keep_download: true       # false = delete downloaded media after extraction
+  keep_source_audio: true   # false = delete the decoded track after enhancement
