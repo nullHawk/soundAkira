@@ -243,7 +243,17 @@ def doctor() -> None:
     except ImportError:
         line(False, "torch", "not installed (needed by all model backends)")
     token = os.environ.get("HF_TOKEN") or os.environ.get("HUGGINGFACE_TOKEN")
-    line(bool(token), "HF_TOKEN", "set" if token else "unset (pyannote models are gated)")
+    source = "HF_TOKEN env var" if token else ""
+    if not token and importlib.util.find_spec("huggingface_hub"):
+        from huggingface_hub import get_token
+
+        token = get_token()
+        source = "saved `hf auth login` token" if token else ""
+    line(
+        bool(token),
+        "Hugging Face token",
+        source or "missing: set HF_TOKEN or run `hf auth login` (pyannote models are gated)",
+    )
     for module, extra in [
         ("yt_dlp", "fetch"),
         ("audio_separator", "separation"),
