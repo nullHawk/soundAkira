@@ -9,14 +9,18 @@ starts and ends is fully unit-testable.
 2. Give each word the speaker whose turns overlap it most. Words in
    overlapping speech, or with no speaker nearby, become hard breaks, so no
    clip ever contains two voices. Each speaker change is then snapped to the
-   most natural nearby word boundary (a pause or sentence end), because
-   diarization boundaries are often a few hundred ms off.
+   most natural word boundary (a pause or sentence end) inside the
+   diarization's transition zone, because its boundaries are often a few
+   hundred ms off.
 3. Group consecutive words of the same speaker into runs, breaking at pauses
    longer than `max_pause`.
 4. Split runs longer than `max_duration` at the best boundary: sentence end,
    then clause end, then long pause. Prefer pieces that reach the preferred
    (training-target) length.
-5. Pad each piece into the surrounding silence without crossing into
+5. Trim leading/trailing sentence fragments (e.g. a clip starting at
+   "...think the most important decision") back to sentence boundaries when
+   one is close, so clips start and end like complete utterances.
+6. Pad each piece into the surrounding silence without crossing into
    neighbouring words or other speakers' turns, and compute text and alignment
    metrics used later for filtering.
 """
@@ -39,6 +43,7 @@ from soundakira.utils.text import (
 )
 
 _EPS = 0.01
+_SNAP_MARGIN = 0.1
 
 
 @dataclass(frozen=True)
@@ -52,7 +57,8 @@ class SegmentationParams:
     speaker_max_distance: float = 0.3
     overlap_word_fraction: float = 0.3
     refine_with_vad: bool = True
-    snap_speaker_changes: float = 1.0
+    snap_speaker_changes: float = 0.5
+    trim_to_sentence: float = 4.0
 
 
 def sanitize_words(words: list[Word]) -> list[Word]:
@@ -116,51 +122,117 @@ def overlapped_words(words: list[Word], overlaps: SpanIndex, fraction: float) ->
     return flags
 
 
-def _boundary_score(words: list[Word], c: int, t0: float) -> float:
-    """How natural a cut between words[c-1] and words[c] is, near time t0."""
+def _boundary_score(words: list[Word], c: int) -> float:
+    """How natural a cut between words[c-1] and words[c] is."""
     gap = max(0.0, words[c].start - words[c - 1].end)
     prev = words[c - 1].text
-    return (
-        min(gap, 1.0)
-        + 0.3 * ends_sentence(prev)
-        + 0.1 * ends_clause(prev)
-        - 0.1 * abs(words[c].start - t0)
+    return min(gap, 1.0) + 0.3 * ends_sentence(prev) + 0.1 * ends_clause(prev)
+
+
+def _transition_zone(
+    turns_by_speaker: dict[str, list[Turn]], a: str, b: str, t: float, tolerance: float
+) -> tuple[float, float]:
+    """Where diarization says speaker `a` hands over to `b` near time t: from
+    the end of a's nearest turn to the start of b's, widened by `tolerance`."""
+    a_end = min((tr.end for tr in turns_by_speaker.get(a, [])), key=lambda e: abs(e - t), default=t)
+    b_start = min(
+        (tr.start for tr in turns_by_speaker.get(b, [])), key=lambda s: abs(s - t), default=t
     )
+    return min(a_end, b_start) - tolerance, max(a_end, b_start) + tolerance
 
 
 def snap_speaker_changes(
-    words: list[Word], speakers: list[str | None], max_shift: float
+    words: list[Word],
+    speakers: list[str | None],
+    turns: list[Turn],
+    tolerance: float,
 ) -> list[str | None]:
-    """Move each A->B speaker change to the best word boundary within
-    `max_shift` seconds, then reassign the words in between.
+    """Move each A->B speaker change to the most natural word boundary
+    (largest pause, sentence end) inside the diarization's transition zone.
 
-    Example: "...in these apps? | Multiple reasons." where diarization switched
-    speakers after "Multiple". The boundary after "apps?" (sentence end plus
-    the largest pause) wins. A small penalty per second of shift keeps the
-    original boundary when no candidate is clearly better.
+    Diarization gives the rough location of a speaker change; its exact
+    boundary is often a few hundred ms off. Example: "...in these apps? |
+    Multiple reasons." where diarization switched after "Multiple". Candidates
+    are limited to the zone between A's turn end and B's turn start
+    (+/- tolerance), so a second sentence end further away can't pull the
+    change the wrong way.
     """
     spk = list(speakers)
-    if max_shift <= 0:
+    if tolerance <= 0 or not turns:
         return spk
+    by_speaker: dict[str, list[Turn]] = defaultdict(list)
+    for tr in turns:
+        by_speaker[tr.speaker].append(tr)
     n, i = len(words), 1
     while i < n:
         a, b = spk[i - 1], spk[i]
         if a is None or b is None or a == b:
             i += 1
             continue
-        t0 = words[i].start
+        z0, z1 = _transition_zone(by_speaker, a, b, words[i].start, tolerance)
         lo = i
-        while lo - 1 >= 1 and spk[lo - 1] == a and t0 - words[lo - 1].start <= max_shift:
+        while lo - 1 >= 1 and spk[lo - 1] == a and words[lo - 1].start >= z0:
             lo -= 1
         hi = i
-        while hi + 1 < n and spk[hi] == b and words[hi + 1].start - t0 <= max_shift:
+        while hi + 1 < n and spk[hi] == b and words[hi + 1].start <= z1:
             hi += 1
-
-        best = max(range(lo, hi + 1), key=lambda c: (_boundary_score(words, c, t0), -abs(c - i)))
+        best = max(range(lo, hi + 1), key=lambda c: (_boundary_score(words, c), -abs(c - i)))
+        if _boundary_score(words, best) < _boundary_score(words, i) + _SNAP_MARGIN:
+            best = i  # only move for a clearly better boundary
         for k in range(min(best, i), max(best, i)):
             spk[k] = a if best > i else b
         i = max(best, i) + 1
     return spk
+
+
+def trim_to_sentences(
+    piece: list[int], words: list[Word], max_trim: float, context_gap: float = 5.0
+) -> tuple[list[int], bool, bool]:
+    """Drop a leading/trailing sentence fragment of at most `max_trim` seconds.
+
+    A piece starts mid-sentence when the previous word (any speaker, within
+    `context_gap` s) does not end a sentence. It ends mid-sentence when its last
+    word doesn't end one and more speech follows. Returns
+    (piece, clean_start, clean_end). Pieces with no nearby sentence boundary
+    are kept as-is and flagged instead.
+    """
+
+    def neighbour(i: int, step: int) -> int | None:
+        j = i + step
+        while 0 <= j < len(words) and words[j].kind != "word":
+            j += step
+        return j if 0 <= j < len(words) else None
+
+    prev = neighbour(piece[0], -1)
+    clean_start = (
+        prev is None
+        or ends_sentence(words[prev].text)
+        or words[piece[0]].start - words[prev].end >= context_gap
+    )
+    if not clean_start and max_trim > 0:
+        t0 = words[piece[0]].start
+        for k in range(1, len(piece)):
+            if words[piece[k]].start - t0 > max_trim:
+                break
+            if ends_sentence(words[piece[k - 1]].text):
+                piece, clean_start = piece[k:], True
+                break
+
+    nxt = neighbour(piece[-1], 1)
+    clean_end = (
+        nxt is None
+        or ends_sentence(words[piece[-1]].text)
+        or words[nxt].start - words[piece[-1]].end >= context_gap
+    )
+    if not clean_end and max_trim > 0:
+        t1 = words[piece[-1]].end
+        for k in range(len(piece) - 1, 0, -1):
+            if t1 - words[piece[k - 1]].end > max_trim:
+                break
+            if ends_sentence(words[piece[k - 1]].text):
+                piece, clean_end = piece[:k], True
+                break
+    return piece, clean_start, clean_end
 
 
 def build_runs(
@@ -244,7 +316,7 @@ def build_segments(
     if params.refine_with_vad and speech:
         words = refine_words_with_vad(words, speech_index)
     speakers = assign_speakers(words, turns, params.speaker_max_distance)
-    speakers = snap_speaker_changes(words, speakers, params.snap_speaker_changes)
+    speakers = snap_speaker_changes(words, speakers, turns, params.snap_speaker_changes)
     overlapped = overlapped_words(words, overlap_index, params.overlap_word_fraction)
 
     turns_by_speaker: dict[str, list[Turn]] = defaultdict(list)
@@ -253,7 +325,10 @@ def build_segments(
 
     segments: list[Segment] = []
     for speaker, run in build_runs(words, speakers, overlapped, params.max_pause):
-        for piece in split_run(words, run, params.max_duration, params.preferred_min_duration):
+        for raw_piece in split_run(words, run, params.max_duration, params.preferred_min_duration):
+            piece, clean_start, clean_end = trim_to_sentences(
+                raw_piece, words, params.trim_to_sentence
+            )
             seg = _make_segment(
                 source_id,
                 speaker,
@@ -267,6 +342,8 @@ def build_segments(
                 params,
             )
             if seg is not None:
+                seg.metrics["sentence_start"] = float(clean_start)
+                seg.metrics["sentence_end"] = float(clean_end)
                 segments.append(seg)
     return segments
 

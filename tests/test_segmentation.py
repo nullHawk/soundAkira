@@ -111,18 +111,57 @@ def test_text_tagged_only_when_events_present():
 def test_speaker_change_snaps_to_sentence_boundary():
     from soundakira.segmentation.builder import snap_speaker_changes
 
-    # "...apps? | Multiple reasons." but diarization switched after "Multiple".
+    # Real case: "...apps? | Multiple reasons. I'll start..." with the
+    # diarization handover between 31.58 (A ends) and 32.26 (B starts).
     ws = [
         Word(" these", 29.9, 30.2),
-        Word(" apps?", 30.3, 30.8),
+        Word(" apps?", 30.3, 30.9),
         Word(" Multiple", 31.3, 31.9),
         Word(" reasons.", 32.0, 32.5),
         Word(" I'll", 33.0, 33.2),
     ]
-    assert snap_speaker_changes(ws, ["A", "A", "A", "B", "B"], 1.0) == ["A", "A", "B", "B", "B"]
-    # The other direction: diarization switched too early.
-    assert snap_speaker_changes(ws, ["A", "B", "B", "B", "B"], 1.0) == ["A", "A", "B", "B", "B"]
-    # No clearly better candidate: keep the original boundary.
+    turns = [Turn(20, 31.58, "A"), Turn(32.26, 40, "B")]
+    # Diarization switched after "Multiple": move the change back to "apps?".
+    assert snap_speaker_changes(ws, list("AAABB"), turns, 0.5) == list("AABBB")
+    # "reasons." is also a sentence end, but outside the handover zone.
+    assert snap_speaker_changes(ws, list("AABBB"), turns, 0.5) == list("AABBB")
+    # Switched too early (at "apps?", before the zone): move it forward.
+    early = [Turn(20, 30.9, "A"), Turn(31.0, 40, "B")]
+    assert snap_speaker_changes(ws, list("ABBBB"), early, 0.5) == list("AABBB")
+    # No clearly better candidate: keep the original boundary; 0 disables.
     flat = [Word(f" w{i}", i * 0.3, i * 0.3 + 0.25) for i in range(6)]
-    assert snap_speaker_changes(flat, ["A", "A", "A", "B", "B", "B"], 1.0) == ["A"] * 3 + ["B"] * 3
-    assert snap_speaker_changes(ws, ["A", "A", "A", "B", "B"], 0.0) == ["A", "A", "A", "B", "B"]
+    flat_turns = [Turn(0, 0.85, "A"), Turn(0.85, 2, "B")]
+    assert snap_speaker_changes(flat, list("AAABBB"), flat_turns, 0.5) == list("AAABBB")
+    assert snap_speaker_changes(ws, list("AAABB"), turns, 0.0) == list("AAABB")
+
+
+def test_trim_to_sentences_drops_edge_fragments():
+    from soundakira.segmentation.builder import trim_to_sentences
+
+    text = ["And", "I", "think.", "The", "decision", "matters.", "So", "we"]
+    ws = [Word(" " + t, i * 0.5, i * 0.5 + 0.4) for i, t in enumerate(text)]
+    ws.append(Word(" next.", 5.0, 5.4))
+    # Piece starts at "think." (the previous word "I" doesn't end a sentence)
+    # and ends at "we" (more speech follows): both fragments are trimmed.
+    piece, start_ok, end_ok = trim_to_sentences([2, 3, 4, 5, 6, 7], ws, 4.0)
+    assert [ws[i].text.strip() for i in piece] == ["The", "decision", "matters."]
+    assert start_ok and end_ok
+    # Already clean: unchanged. max_trim=0: unchanged but flagged.
+    assert trim_to_sentences([3, 4, 5], ws, 4.0) == ([3, 4, 5], True, True)
+    assert trim_to_sentences([2, 3, 4, 5, 6, 7], ws, 0.0) == ([2, 3, 4, 5, 6, 7], False, False)
+
+
+def test_segments_carry_sentence_flags():
+    words = [
+        Word(f" w{i}" + ("." if i in (4, 9) else ""), i * 0.5, i * 0.5 + 0.4, 0.9)
+        for i in range(10)
+    ]
+    segs = build_segments(
+        "s",
+        Transcript("en", 1, words),
+        [Turn(0, 6, "A")],
+        [],
+        6,
+        SegmentationParams(min_duration=1),
+    )
+    assert segs[0].metrics["sentence_start"] == 1.0 and segs[0].metrics["sentence_end"] == 1.0

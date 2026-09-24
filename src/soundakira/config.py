@@ -90,7 +90,8 @@ class SegmentationConfig(_Strict):
     speaker_max_distance: float = 0.3
     overlap_word_fraction: float = 0.3
     refine_with_vad: bool = True
-    snap_speaker_changes: float = 1.0
+    snap_speaker_changes: float = 0.5
+    trim_to_sentence: float = 4.0
 
 
 class QualityConfig(_Strict):
