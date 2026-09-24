@@ -145,19 +145,24 @@ def test_force_reruns_stage(tmp_path, corpus):
     assert summary.counts["transcribe"]["done"] == 2
 
 
-def test_missing_backend_dependency_is_a_clear_error(tmp_path, corpus):
-    from soundakira.components.base import Enhancer
-    from soundakira.registry import ComponentError, register
+def test_stage_that_cannot_load_fails_cleanly_and_independent_stages_continue(tmp_path, corpus):
+    from soundakira.components.base import Diarizer
+    from soundakira.registry import register
 
-    @register("enhancer", "needs_missing_dep")
-    class Broken(Enhancer):
+    @register("diarizer", "gated")
+    class Gated(Diarizer):
         def load(self):
             import definitely_not_installed  # noqa: F401
 
-        def process(self, audio, sr):
-            return audio
+        def diarize(self, audio, sr):
+            return []
 
-    cfg = _config(tmp_path, ["enhance.chain=[{name: needs_missing_dep}]"])
+    cfg = _config(tmp_path, ["diarization.name=gated"])
     runner = Runner(cfg)
-    with pytest.raises(ComponentError, match="missing a dependency"):
-        runner.run(runner.prepare(resolve_inputs([str(corpus)])))
+    workspaces = runner.prepare(resolve_inputs([str(corpus)]))
+    summary = runner.run(workspaces)
+    assert summary.counts["diarize"]["failed"] == 2
+    assert summary.counts["transcribe"]["done"] == 2  # does not depend on diarize
+    assert summary.counts["segment"]["blocked"] == 2  # does
+    err = workspaces[0].stage_record("diarize")["error"]
+    assert "missing a dependency" in err and "doctor" in err

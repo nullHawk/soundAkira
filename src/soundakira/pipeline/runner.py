@@ -121,7 +121,28 @@ class Runner:
                 continue
 
             log.info("stage %-10s %d source(s) to process", stage.name, len(pending))
-            stage.setup()
+            try:
+                stage.setup()
+            except KeyboardInterrupt:
+                raise
+            except Exception as e:
+                # Model couldn't load (missing dependency, gated weights, OOM...).
+                # Fail this stage for every pending source but keep going: stages
+                # that don't depend on it (e.g. transcribe vs diarize) still run.
+                log.error("stage %s could not start: %s", stage.name, e)
+                for ws, fp in pending:
+                    ws.update_stage(
+                        stage.name,
+                        {
+                            "status": "failed",
+                            "fingerprint": fp,
+                            "finished_at": now_iso(),
+                            "error": f"setup failed: {type(e).__name__}: {e}"[:2000],
+                        },
+                    )
+                    summary.add(stage.name, "failed")
+                stage.teardown()
+                continue
             try:
                 bar = tqdm(total=len(pending), desc=stage.name, unit="src", leave=False)
                 if stage.workers > 1:
