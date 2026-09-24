@@ -1,0 +1,22 @@
+# Multilingual (English + Indian languages) via the ASR router.
+# Each source is routed by its manifest language hint (e.g. "hi"), otherwise by
+# Whisper language detection. Swap a route for a dedicated Indic model
+# (e.g. an IndicConformer plugin + aligner) when one is registered.
+
+extract:
+  prefer_languages: [hin, eng, hi, en]
+
+asr:
+  name: router
+  params:
+    default: en
+    detect_with: en
+    routes:
+      en: {name: faster_whisper, params: {model: large-v3}}
+      hi: {name: faster_whisper, params: {model: large-v3}}
+      # hi-en: {name: hinglish_asr}          # code-switched model (plugin)
+      # ta: {name: indic_conformer, params: {language: ta}}
+  aligner: null
+
+export:
+  languages: null

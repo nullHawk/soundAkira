@@ -1,0 +1,10 @@
+# Fast iteration / smaller GPUs: batched turbo Whisper, no extra denoise.
+
+asr:
+  params: {model: large-v3-turbo, batch_size: 16}
+
+enhance:
+  chunk_seconds: 600.0
+
+export:
+  workers: 8

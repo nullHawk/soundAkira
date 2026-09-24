@@ -1,0 +1,39 @@
+# English, maximum dataset quality: 5.1 centre channel, RoFormer + light
+# denoise, Parakeet ASR (strong English WER, accurate timestamps), DNSMOS.
+# Needs extras: standard, denoise, parakeet, quality.
+
+device: cuda
+
+extract:
+  channels: center
+  prefer_languages: [eng, en]
+
+enhance:
+  chain:
+    - name: roformer
+      params: {model: model_bs_roformer_ep_317_sdr_12.9755.ckpt}
+    - name: deepfilternet
+      params: {atten_lim_db: 12}
+
+asr:
+  name: parakeet
+  params: {model: nvidia/parakeet-tdt-0.6b-v2, language: en}
+  language: en
+
+quality:
+  scorers:
+    - {name: signal}
+    - {name: dnsmos}
+
+export:
+  languages: [en]
+  filters:
+    - {field: chars_per_sec, min: 6.0, max: 22.0}
+    - {field: repetition_ratio, max: 0.3}
+    - {field: speech_ratio, min: 0.6}
+    - {field: overlap_ratio, max: 0.05}
+    - {field: speaker_similarity, min: 0.5}
+    - {field: clip_ratio, max: 0.001}
+    - {field: dnsmos_ovr, min: 3.0}
+  split:
+    test_speaker_fraction: 0.02
