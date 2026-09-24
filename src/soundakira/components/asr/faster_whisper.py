@@ -9,6 +9,7 @@ hallucinated text in a TTS dataset is worse than missing text.
 
 from __future__ import annotations
 
+import contextlib
 from typing import Any
 
 import numpy as np
@@ -40,6 +41,13 @@ class FasterWhisperTranscriber(Transcriber):
     params: FasterWhisperParams
 
     def load(self) -> None:
+        # CTranslate2 dlopens libcublas/libcudnn but can't find the pip-installed
+        # nvidia-* wheels by itself. Importing torch first loads them into the
+        # process. Without this, transcribe fails whenever it is the first GPU
+        # stage in a process (e.g. a resumed run).
+        with contextlib.suppress(ImportError):
+            import torch  # noqa: F401
+
         from faster_whisper import BatchedInferencePipeline, WhisperModel
 
         device, index = split_cuda_device(resolve_device(self.ctx.device))
