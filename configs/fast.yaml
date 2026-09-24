@@ -1,12 +1,11 @@
-# Fast iteration / smaller GPUs: batched turbo Whisper (~8x faster ASR).
-# Trade-off: batched decoding loses most punctuation/casing. Fine for
-# exploring data, not for final TTS transcripts.
+# ~1.7x faster end to end: Whisper large-v3-turbo (beam 5) is ~3x faster than
+# large-v3 and keeps punctuation. On anime dialogue its output differed from
+# large-v3 by 8.2% of words, against a 6.9% noise floor between large-v3's own
+# beam settings.
+# Avoid batch_size > 0 or beam_size: 1 with turbo: both lose most punctuation.
 
 asr:
-  params: {model: large-v3-turbo, batch_size: 16}
-
-enhance:
-  chunk_seconds: 600.0
+  params: {model: large-v3-turbo}
 
 export:
   workers: 8

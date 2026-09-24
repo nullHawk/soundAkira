@@ -18,7 +18,7 @@ video / URL / playlist
 |---|---|---|
 | fetch | Downloads audio only for URLs (YouTube, 1000+ sites, direct links) | yt-dlp |
 | extract | Picks the dialogue track: skips commentary and audio description, prefers your language, can isolate the 5.1 centre channel | ffmpeg |
-| enhance | Removes music, effects and noise, keeping voices. Streams in chunks with crossfades, so any length works | BS-RoFormer ([audio-separator](https://github.com/nomadkaraoke/python-audio-separator)); Demucs and DeepFilterNet optional |
+| enhance | Removes music, effects and noise, keeping voices. Streams in chunks with crossfades, so any length works | MelBand-RoFormer, fp16 ([audio-separator](https://github.com/nomadkaraoke/python-audio-separator)); Demucs and DeepFilterNet optional |
 | vad | Finds speech regions | Silero VAD |
 | diarize | Who spoke when, within one source | pyannote `speaker-diarization-community-1`; `cluster` fallback (windowed embeddings + clustering, no gated models) |
 | transcribe | Text with word timestamps, per-language routing | faster-whisper `large-v3`; NVIDIA Parakeet optional; WhisperX forced alignment optional |
@@ -117,16 +117,16 @@ A reference is never the target clip and never overlaps it in time. By default i
 
 ### Measured throughput
 
-44 minutes of podcast audio (5 videos) on one NVIDIA A10G, default settings:
+On one NVIDIA A10G with default settings (MelBand-RoFormer with fp16 autocast, Whisper large-v3 with beam 5):
 
 | Stage | Speed |
 |---|---|
-| enhance (BS-RoFormer, `overlap: 2`) | 4× real time (the bottleneck) |
-| transcribe (Whisper large-v3, beam 5) | 12× real time |
+| enhance (vocal separation) | 17× real time |
+| transcribe (Whisper large-v3) | 16× real time |
 | diarize (pyannote community-1) | 50× real time |
 | vad (Silero) | 70× real time |
 
-That is about 3 hours of source audio per GPU-hour, end to end. Batched Whisper (`configs/fast.yaml`) is about 8× faster at the cost of punctuation. Run more shards to scale out.
+End to end that is about 6 hours of source audio per GPU-hour. `configs/fast.yaml` swaps in large-v3-turbo (47× real time, keeps punctuation) for about 8.5 hours per GPU-hour. Separation already keeps the GPU at about 95% utilisation, so scale out with more GPUs or shards rather than more workers per GPU.
 
 ## Speakers across sources
 
