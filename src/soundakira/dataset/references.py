@@ -20,6 +20,7 @@ import numpy as np
 
 from soundakira.config import ReferenceConfig
 from soundakira.dataset.filters import first_failure
+from soundakira.segmentation.builder import is_cased, starts_lowercase
 from soundakira.types import Segment, Word
 from soundakira.utils.text import ends_sentence, join_words, spoken_char_count
 
@@ -49,10 +50,15 @@ def derive_excerpt(
     instead, because a prompt that begins mid-phrase teaches the model odd
     onsets. Returns (start, end, words), or None if no excerpt fits."""
     words = seg.words
+    cased = is_cased(words)
     first, start = 0, seg.start
     if seg.metrics.get("sentence_start", 1.0) < 1.0:
         for k in range(1, len(words)):
-            if words[k - 1].kind == "word" and ends_sentence(words[k - 1].text):
+            if (
+                words[k - 1].kind == "word"
+                and ends_sentence(words[k - 1].text)
+                and not (cased and starts_lowercase(words[k].text))
+            ):
                 first, start = k, max(words[k - 1].end + 0.03, words[k].start - 0.12)
                 break
         else:

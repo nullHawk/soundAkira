@@ -185,8 +185,27 @@ def snap_speaker_changes(
     return spk
 
 
+def is_cased(words: list[Word]) -> bool:
+    """Does this transcript use capitalisation at all? Uncased ASR output
+    (all lowercase) and uncased scripts must not be judged by letter case."""
+    return any(ch.isupper() for w in words for ch in w.text)
+
+
+def starts_lowercase(text: str) -> bool:
+    """True if the first letter is lowercase: a mid-sentence start in cased
+    transcripts (always False for uncased scripts such as Devanagari)."""
+    for ch in text:
+        if ch.isalpha():
+            return ch.islower()
+    return False
+
+
 def trim_to_sentences(
-    piece: list[int], words: list[Word], max_trim: float, context_gap: float = 5.0
+    piece: list[int],
+    words: list[Word],
+    max_trim: float,
+    context_gap: float = 5.0,
+    cased: bool = True,
 ) -> tuple[list[int], bool, bool]:
     """Drop a leading/trailing sentence fragment of at most `max_trim` seconds.
 
@@ -204,7 +223,8 @@ def trim_to_sentences(
         return j if 0 <= j < len(words) else None
 
     prev = neighbour(piece[0], -1)
-    clean_start = (
+    lower = starts_lowercase if cased else (lambda _t: False)
+    clean_start = not lower(words[piece[0]].text) and (
         prev is None
         or ends_sentence(words[prev].text)
         or words[piece[0]].start - words[prev].end >= context_gap
@@ -214,7 +234,7 @@ def trim_to_sentences(
         for k in range(1, len(piece)):
             if words[piece[k]].start - t0 > max_trim:
                 break
-            if ends_sentence(words[piece[k - 1]].text):
+            if ends_sentence(words[piece[k - 1]].text) and not lower(words[piece[k]].text):
                 piece, clean_start = piece[k:], True
                 break
 
@@ -316,6 +336,7 @@ def build_segments(
     if params.refine_with_vad and speech:
         words = refine_words_with_vad(words, speech_index)
     speakers = assign_speakers(words, turns, params.speaker_max_distance)
+    cased = is_cased(words)
     speakers = snap_speaker_changes(words, speakers, turns, params.snap_speaker_changes)
     overlapped = overlapped_words(words, overlap_index, params.overlap_word_fraction)
 
@@ -327,7 +348,7 @@ def build_segments(
     for speaker, run in build_runs(words, speakers, overlapped, params.max_pause):
         for raw_piece in split_run(words, run, params.max_duration, params.preferred_min_duration):
             piece, clean_start, clean_end = trim_to_sentences(
-                raw_piece, words, params.trim_to_sentence
+                raw_piece, words, params.trim_to_sentence, cased=cased
             )
             seg = _make_segment(
                 source_id,

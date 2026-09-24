@@ -311,6 +311,7 @@ class TranscribeStage(Stage):
 
 class SegmentStage(Stage):
     name = "segment"
+    version = "2"  # 2: speaker-change snapping, sentence trimming, lowercase-start check
     requires = ("vad", "diarize", "transcribe")
 
     def params(self) -> dict[str, Any]:

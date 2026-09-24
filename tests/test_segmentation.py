@@ -165,3 +165,22 @@ def test_segments_carry_sentence_flags():
         SegmentationParams(min_duration=1),
     )
     assert segs[0].metrics["sentence_start"] == 1.0 and segs[0].metrics["sentence_end"] == 1.0
+
+
+def test_lowercase_continuation_is_not_a_sentence_start():
+    from soundakira.segmentation.builder import trim_to_sentences
+
+    # ASR wrote "Hey... are you following me?": the "..." looks like a sentence
+    # end, but the lowercase continuation shows it isn't one.
+    text = ["Hey...", "are", "you", "following", "me?", "You", "want", "it."]
+    ws = [Word(" " + t, i * 0.5, i * 0.5 + 0.4) for i, t in enumerate(text)]
+    piece, clean_start, _ = trim_to_sentences(list(range(1, 8)), ws, 4.0)
+    assert ws[piece[0]].text == " You" and clean_start
+    # Uncased scripts are unaffected.
+    hi = [
+        Word(" नमस्ते।", 0, 0.4),
+        Word(" आप", 0.5, 0.9),
+        Word(" कैसे", 1.0, 1.4),
+        Word(" हैं।", 1.5, 1.9),
+    ]
+    assert trim_to_sentences([1, 2, 3], hi, 4.0) == ([1, 2, 3], True, True)
