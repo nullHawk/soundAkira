@@ -30,7 +30,7 @@
 | Case | Handling |
 |---|---|
 | Whisper drifting into lowercase, unpunctuated text | `condition_on_previous_text: true` (default). On podcast audio it cut unpunctuated segments from 10–72% to 0–5% with no loss of words. A punctuated `initial_prompt` fixes the punctuation but silently drops 7–19% of words, so it is not used. |
-| Whisper hallucination on silence or music | faster-whisper's internal VAD, `condition_on_previous_text: false`, `hallucination_silence_threshold`, and compression-ratio and log-prob fallbacks. At export: `repetition_ratio`, `speech_ratio` (text over non-speech) and `asr_confidence` filters. |
+| Whisper hallucination on silence or music | faster-whisper's internal VAD, `hallucination_silence_threshold`, and compression-ratio and log-prob fallbacks. At export: `repetition_ratio`, `speech_ratio` (text over non-speech) and `asr_confidence` filters. |
 | Word timestamps that swallow the preceding silence | Words are trimmed to VAD speech (`segmentation.refine_with_vad`). An aligner can also be configured. |
 | Backends without word confidence (Parakeet) | Confidence metrics are absent; filters with `on_missing: keep` skip them. |
 | Backends without word timestamps | Transcribe fails with a message asking for `asr.aligner`. It never guesses. |
