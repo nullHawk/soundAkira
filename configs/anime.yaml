@@ -1,0 +1,15 @@
+# Anime, cartoons and dubbed TV: many characters, short lines, voice actors
+# with similar timbre (and one actor voicing several roles), theme songs.
+# Tuned on 3 Naruto episodes (1, 2, 499).
+
+speakers:
+  # 0.45 (default) merged different female-voiced characters across episodes.
+  # 0.25 split both bad merges and kept every verified same-character link.
+  # Too strict for podcasts: it split one host whose recording setup varied.
+  cluster_threshold: 0.25
+  min_local_duration: 10.0
+
+export:
+  # Anime lines are short. With a 15 s minimum only ~15% of clean speech
+  # qualifies as a target; 5 s keeps most of it.
+  min_duration: 5.0

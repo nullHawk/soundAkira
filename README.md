@@ -135,7 +135,7 @@ End to end that is about 6 hours of source audio per GPU-hour. `configs/fast.yam
 3. **Stable IDs:** `work/speakers/registry.json` maps clusters to IDs by shared members, then by centroid similarity. Adding new videos never renumbers existing speakers. Names you edit in the registry are kept.
 4. **Anchors (optional):** put a few clips per known person in `anchors/<Name>/*.wav` and set `speakers.anchors_dir`. Matching clusters get that name and are merged.
 
-Tune `cluster_threshold` for your embedder: too low splits one person into several IDs, too high merges different people. `speakers.csv` and `metadata.csv` carry the similarity values, so you can check the result.
+Tune `cluster_threshold` for your content: too low splits one person into several IDs, too high merges different people. No single value suits everything. Podcasts need the default 0.45, because a host's voice varies across recording setups. Anime needs about 0.25 (`configs/anime.yaml`), because different characters can sound alike. For the main characters of a series, **anchors** are the most reliable option. `speakers.csv` and `metadata.csv` carry the similarity values, so you can check the result.
 
 ## Languages
 
