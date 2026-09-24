@@ -1,0 +1,77 @@
+[build-system]
+requires = ["hatchling>=1.24"]
+build-backend = "hatchling.build"
+
+[project]
+name = "soundakira"
+version = "0.1.0"
+description = "Turn videos (local files, URLs, YouTube) into speaker-labelled, transcribed speech datasets for zero-shot TTS / voice cloning."
+readme = "README.md"
+license = "Apache-2.0"
+requires-python = ">=3.10"
+authors = [{ name = "soundAkira contributors" }]
+keywords = ["tts", "voice-cloning", "speech", "dataset", "diarization", "asr", "whisper", "pyannote"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Science/Research",
+    "Programming Language :: Python :: 3",
+    "Topic :: Multimedia :: Sound/Audio :: Speech",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+# Core dependencies are deliberately light: no torch. Every model backend lives
+# behind an optional extra and is imported lazily by its component.
+dependencies = [
+    "numpy>=1.24",
+    "scipy>=1.10",
+    "soundfile>=0.12",
+    "pydantic>=2.5",
+    "pyyaml>=6.0",
+    "typer>=0.12",
+    "tqdm>=4.66",
+]
+
+[project.optional-dependencies]
+fetch = ["yt-dlp>=2025.1.1"]
+separation = ["audio-separator>=0.30"]
+demucs = ["demucs>=4.0.1"]
+denoise = ["deepfilternet>=0.5.6"]
+vad = ["silero-vad>=5.1"]
+diarization = ["pyannote.audio>=4.0"]
+asr = ["faster-whisper>=1.1"]
+parakeet = ["nemo_toolkit[asr]>=2.4"]
+align = ["whisperx>=3.3"]
+quality = ["torchmetrics[audio]>=1.4", "onnxruntime>=1.17", "librosa>=0.10"]
+# The default pipeline: yt-dlp + RoFormer separation + Silero + pyannote + faster-whisper.
+standard = ["soundakira[fetch,separation,vad,diarization,asr]"]
+dev = ["pytest>=8", "ruff>=0.6", "mypy>=1.10", "pre-commit>=3.7", "types-PyYAML"]
+
+[project.scripts]
+soundakira = "soundakira.cli:app"
+
+# Third-party packages can add components without touching this repo:
+#   [project.entry-points."soundakira.plugins"]
+#   "asr.my_model" = "my_pkg.asr:MyTranscriber"
+
+[project.urls]
+Homepage = "https://github.com/rumik-ai/soundakira"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/soundakira"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "SIM", "RUF"]
+ignore = ["RUF001", "RUF002", "RUF003"]  # unicode punctuation (Devanagari danda etc.) is intentional
+
+[tool.mypy]
+python_version = "3.10"
+ignore_missing_imports = true
+warn_unused_ignores = true

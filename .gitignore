@@ -1,0 +1,27 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+build/
+dist/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# Pipeline outputs
+work/
+dataset/
+*.flac
+*.wav
+!tests/data/**
+
+# Secrets / local
+.env
+*.cookies.txt
+
+# OS / editors
+.DS_Store
+.idea/
+.vscode/
