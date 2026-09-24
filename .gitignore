@@ -11,8 +11,8 @@ dist/
 .mypy_cache/
 
 # Pipeline outputs
-work/
-dataset/
+/work/
+/dataset/
 *.flac
 *.wav
 !tests/data/**
