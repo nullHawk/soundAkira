@@ -60,6 +60,7 @@ segmentation:
   speaker_max_distance: 0.3     # attach words just outside a diarization turn
   overlap_word_fraction: 0.3    # words this much inside overlapped speech break utterances
   refine_with_vad: true         # trim word boundaries to VAD speech
+  snap_speaker_changes: 1.0     # move speaker changes up to this far to a pause/sentence end
 
 quality:
   scorers:              # signal (level/clipping/SNR estimate) | dnsmos

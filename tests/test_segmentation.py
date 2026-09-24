@@ -106,3 +106,23 @@ def test_text_tagged_only_when_events_present():
     )
     assert segs[0].text == "hello world."
     assert segs[0].text_tagged == "hello [laugh] world."
+
+
+def test_speaker_change_snaps_to_sentence_boundary():
+    from soundakira.segmentation.builder import snap_speaker_changes
+
+    # "...apps? | Multiple reasons." but diarization switched after "Multiple".
+    ws = [
+        Word(" these", 29.9, 30.2),
+        Word(" apps?", 30.3, 30.8),
+        Word(" Multiple", 31.3, 31.9),
+        Word(" reasons.", 32.0, 32.5),
+        Word(" I'll", 33.0, 33.2),
+    ]
+    assert snap_speaker_changes(ws, ["A", "A", "A", "B", "B"], 1.0) == ["A", "A", "B", "B", "B"]
+    # The other direction: diarization switched too early.
+    assert snap_speaker_changes(ws, ["A", "B", "B", "B", "B"], 1.0) == ["A", "A", "B", "B", "B"]
+    # No clearly better candidate: keep the original boundary.
+    flat = [Word(f" w{i}", i * 0.3, i * 0.3 + 0.25) for i in range(6)]
+    assert snap_speaker_changes(flat, ["A", "A", "A", "B", "B", "B"], 1.0) == ["A"] * 3 + ["B"] * 3
+    assert snap_speaker_changes(ws, ["A", "A", "A", "B", "B"], 0.0) == ["A", "A", "A", "B", "B"]

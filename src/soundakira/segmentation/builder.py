@@ -8,7 +8,9 @@ starts and ends is fully unit-testable.
    first word after a pause back into the silence.
 2. Give each word the speaker whose turns overlap it most. Words in
    overlapping speech, or with no speaker nearby, become hard breaks, so no
-   clip ever contains two voices.
+   clip ever contains two voices. Each speaker change is then snapped to the
+   most natural nearby word boundary (a pause or sentence end), because
+   diarization boundaries are often a few hundred ms off.
 3. Group consecutive words of the same speaker into runs, breaking at pauses
    longer than `max_pause`.
 4. Split runs longer than `max_duration` at the best boundary: sentence end,
@@ -50,6 +52,7 @@ class SegmentationParams:
     speaker_max_distance: float = 0.3
     overlap_word_fraction: float = 0.3
     refine_with_vad: bool = True
+    snap_speaker_changes: float = 1.0
 
 
 def sanitize_words(words: list[Word]) -> list[Word]:
@@ -111,6 +114,53 @@ def overlapped_words(words: list[Word], overlaps: SpanIndex, fraction: float) ->
         ws, we = w.start, max(w.end, w.start + _EPS)
         flags.append(overlaps.coverage(ws, we) / (we - ws) >= fraction)
     return flags
+
+
+def _boundary_score(words: list[Word], c: int, t0: float) -> float:
+    """How natural a cut between words[c-1] and words[c] is, near time t0."""
+    gap = max(0.0, words[c].start - words[c - 1].end)
+    prev = words[c - 1].text
+    return (
+        min(gap, 1.0)
+        + 0.3 * ends_sentence(prev)
+        + 0.1 * ends_clause(prev)
+        - 0.1 * abs(words[c].start - t0)
+    )
+
+
+def snap_speaker_changes(
+    words: list[Word], speakers: list[str | None], max_shift: float
+) -> list[str | None]:
+    """Move each A->B speaker change to the best word boundary within
+    `max_shift` seconds, then reassign the words in between.
+
+    Example: "...in these apps? | Multiple reasons." where diarization switched
+    speakers after "Multiple". The boundary after "apps?" (sentence end plus
+    the largest pause) wins. A small penalty per second of shift keeps the
+    original boundary when no candidate is clearly better.
+    """
+    spk = list(speakers)
+    if max_shift <= 0:
+        return spk
+    n, i = len(words), 1
+    while i < n:
+        a, b = spk[i - 1], spk[i]
+        if a is None or b is None or a == b:
+            i += 1
+            continue
+        t0 = words[i].start
+        lo = i
+        while lo - 1 >= 1 and spk[lo - 1] == a and t0 - words[lo - 1].start <= max_shift:
+            lo -= 1
+        hi = i
+        while hi + 1 < n and spk[hi] == b and words[hi + 1].start - t0 <= max_shift:
+            hi += 1
+
+        best = max(range(lo, hi + 1), key=lambda c: (_boundary_score(words, c, t0), -abs(c - i)))
+        for k in range(min(best, i), max(best, i)):
+            spk[k] = a if best > i else b
+        i = max(best, i) + 1
+    return spk
 
 
 def build_runs(
@@ -194,6 +244,7 @@ def build_segments(
     if params.refine_with_vad and speech:
         words = refine_words_with_vad(words, speech_index)
     speakers = assign_speakers(words, turns, params.speaker_max_distance)
+    speakers = snap_speaker_changes(words, speakers, params.snap_speaker_changes)
     overlapped = overlapped_words(words, overlap_index, params.overlap_word_fraction)
 
     turns_by_speaker: dict[str, list[Turn]] = defaultdict(list)
