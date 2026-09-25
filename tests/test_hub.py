@@ -136,6 +136,14 @@ def test_two_machines_share_speaker_ids_and_merge(tmp_path, remote):
     readme = remote.files["README.md"].decode()
     assert "data/*.parquet" in readme and "soundakira" not in readme.lower()
 
+    # Hours are tracked per push and per series.
+    assert rep_b.hours_added > 0
+    assert abs(rep_a.total_hours + rep_b.hours_added - rep_b.total_hours) < 1e-3
+    assert set(rep_b.hours_by_series) == {"epone", "eptwo"}
+    st = hub.status(cfg_b)
+    assert [h["total_hours"] for h in st["history"]] == [rep_a.total_hours, rep_b.total_hours]
+    assert "| series | hours |" in remote.files["README.md"].decode()
+
     # Re-pushing the same build uploads nothing.
     assert hub.push(cfg_b).uploaded == 0
 

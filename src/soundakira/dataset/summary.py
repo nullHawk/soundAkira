@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import re
 from collections import Counter, defaultdict
 from collections.abc import Iterable
 from pathlib import Path
@@ -20,6 +21,23 @@ SPEAKER_COLUMNS = [
     "num_references",
     "sources",
 ]
+
+
+_FINGERPRINT = re.compile(r"-[0-9a-f]{10}$")
+_EPISODE = re.compile(r"[-_ ](s\d+[-_ ]?e\d+|ep?\d+|episode[-_ ]?\d+|\d{1,4})$", re.IGNORECASE)
+
+
+def series_of(source_id: str) -> str:
+    """Group sources into series for reporting: 'naruto-ep01-3fa2c1d9e0' -> 'naruto',
+    'smoking-s01e07-…' -> 'smoking'. YouTube/URL sources group as 'youtube'/'url'."""
+    if source_id.startswith("yt-"):
+        return "youtube"
+    if source_id.startswith("url-"):
+        return "url"
+    base = _FINGERPRINT.sub("", source_id)
+    for _ in range(2):  # e.g. 'show-s01-e02'
+        base = _EPISODE.sub("", base)
+    return base or source_id
 
 
 def speaker_rows(rows: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -69,10 +87,28 @@ def totals(rows: list[dict[str, Any]], speakers: list[dict[str, Any]]) -> dict[s
         by_split[r["split"]]["hours"] += float(r["duration"]) / 3600
     for s in speakers:
         by_split[s["split"]]["speakers"] += 1
+    by_series: dict[str, dict[str, Any]] = defaultdict(
+        lambda: {"hours": 0.0, "utterances": 0, "sources": set(), "speakers": set()}
+    )
+    for r in rows:
+        g = by_series[series_of(r["source_id"])]
+        g["hours"] += float(r["duration"]) / 3600
+        g["utterances"] += 1
+        g["sources"].add(r["source_id"])
+        g["speakers"].add(int(r["speaker_id"]))
     return {
         "total_speakers": len(speakers),
         "total_utterances": len(rows),
         "total_hours": round(hours, 3),
+        "series": {
+            name: {
+                "hours": round(g["hours"], 3),
+                "utterances": g["utterances"],
+                "sources": len(g["sources"]),
+                "speakers": len(g["speakers"]),
+            }
+            for name, g in sorted(by_series.items(), key=lambda kv: -kv[1]["hours"])
+        },
         "num_sources": len({r["source_id"] for r in rows}),
         "splits": {k: {**v, "hours": round(v["hours"], 3)} for k, v in by_split.items()},
         "languages": dict(Counter(r.get("language") for r in rows)),

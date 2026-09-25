@@ -213,6 +213,44 @@ def push(
         typer.echo(f"https://huggingface.co/datasets/{report.repo_id}")
 
 
+@app.command("hub-status")
+def hub_status(
+    config: ConfigOpt = None,
+    set_: SetOpt = None,
+    repo: Annotated[str | None, typer.Option(help="Hub dataset repo.")] = None,
+) -> None:
+    """Hours, speakers and push history of the Hugging Face dataset."""
+    from soundakira.hub import HubError
+    from soundakira.hub import status as hub_status_
+
+    overrides = list(set_ or []) + ([f"hub.repo_id={repo}"] if repo else [])
+    cfg = load_config(config, overrides)
+    try:
+        st = hub_status_(cfg)
+    except HubError as e:
+        raise _fail(e) from e
+    d = st["dataset"]
+    typer.echo(
+        f"{st['repo_id']}: {d.get('total_hours', 0):.2f} h, "
+        f"{d.get('total_utterances', 0)} utterances, {d.get('total_speakers', 0)} speakers, "
+        f"{d.get('num_sources', 0)} sources"
+    )
+    for name, s in d.get("series", {}).items():
+        typer.echo(
+            f"  {name:<24} {s['hours']:7.2f} h  {s['utterances']:6} utts  "
+            f"{s['speakers']:4} spk  {s['sources']:4} src"
+        )
+    typer.echo("history:")
+    for h in st["history"]:
+        added = h.get("hours_added")
+        total = h.get("total_hours")
+        typer.echo(
+            f"  {h['time']}  +{h.get('local_utterances', 0):5} utts  "
+            + (f"{added:+.2f} h -> {total:.2f} h  " if added is not None else "")
+            + f"sources: {', '.join(h.get('sources', []))[:80]}"
+        )
+
+
 @app.command()
 def status(
     config: ConfigOpt = None,

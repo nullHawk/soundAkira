@@ -198,3 +198,13 @@ def test_registry_merges_members_across_builds_of_different_sources(tmp_path):
     # Rebuilding ep1 replaces only ep1's member.
     reg.assign([Cluster(alice_a, ["ep1:S1"], 30, profiles={"ep1:S1": (alice_a, 30)})], 0.6, {"ep1"})
     assert set(reg.speakers[aid]["members"]) == {"ep1:S1", "ep2:S3"}
+
+
+def test_series_grouping():
+    from soundakira.dataset.summary import series_of
+
+    assert series_of("naruto-ep01-dc2404fd66") == "naruto"
+    assert series_of("naruto-ep499-b4bbfabb3f") == "naruto"
+    assert series_of("smoking-s01e07-0a1b2c3d4e") == "smoking"
+    assert series_of("my-show-12-0a1b2c3d4e") == "my-show"
+    assert series_of("yt-dQw4w9WgXcQ") == "youtube"

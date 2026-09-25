@@ -29,7 +29,7 @@ import json
 import logging
 import shutil
 from collections.abc import Iterable
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any, Protocol
 
@@ -217,6 +217,14 @@ def _csv_bytes(rows: list[dict[str, Any]], columns: list[str]) -> bytes:
     return buf.getvalue().encode()
 
 
+def _series_table(totals: dict[str, Any]) -> str:
+    rows = "\n".join(
+        f"| {name} | {s['hours']:.2f} | {s['utterances']} | {s['speakers']} | {s['sources']} |"
+        for name, s in totals.get("series", {}).items()
+    )
+    return "| series | hours | utterances | speakers | sources |\n|---|---|---|---|---|\n" + rows
+
+
 def _card(repo: str, totals: dict[str, Any], sample_rate: int, layout: str) -> bytes:
     name = repo.split("/")[-1]
     if layout == "parquet":
@@ -271,6 +279,8 @@ different clip of the same speaker.
 | speakers | {totals["total_speakers"]} |
 | sources | {totals["num_sources"]} |
 | sample rate | {sample_rate} Hz |
+
+{_series_table(totals)}
 
 {layout_note} Speaker IDs are stable across updates (`speaker_registry.json`),
 `speakers.csv` summarises the speakers, `metadata.jsonl` holds per-utterance
@@ -382,12 +392,30 @@ class PushReport:
     total_speakers: int
     commits: int
     dry_run: bool
+    total_hours: float = 0.0
+    hours_added: float = 0.0
+    hours_by_series: dict[str, float] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
 
 
 # -- operations -------------------------------------------------------------------
+def status(cfg: PipelineConfig, backend: HubBackend | None = None) -> dict[str, Any]:
+    """Current totals and push history of the Hub dataset (read-only)."""
+    backend = backend or backend_for(cfg)
+    head = backend.head()
+    if head is None:
+        raise HubError(f"Hub repo {cfg.hub.resolved_repo_id()} does not exist yet")
+    ds = backend.read("dataset.json", head)
+    mf = backend.read("manifest.json", head)
+    return {
+        "repo_id": getattr(backend, "repo_id", cfg.hub.resolved_repo_id()),
+        "dataset": json.loads(ds) if ds else {},
+        "history": json.loads(mf).get("history", []) if mf else [],
+    }
+
+
 def pull_registry(cfg: PipelineConfig, dest: Path, backend: HubBackend | None = None) -> bool:
     """Replace the local speaker registry with the Hub's (if the Hub has one)."""
     backend = backend or backend_for(cfg)
@@ -477,14 +505,29 @@ def push(
 
     speakers = summary.speaker_rows(merged)
     totals = summary.totals(merged, speakers)
-    report = PushReport(repo, len(upload), len(delete), len(merged), len(speakers), 0, dry_run)
+    remote_hours = sum(float(r["duration"]) for r in remote_rows) / 3600
+    report = PushReport(
+        repo,
+        len(upload),
+        len(delete),
+        len(merged),
+        len(speakers),
+        0,
+        dry_run,
+        total_hours=totals["total_hours"],
+        hours_added=round(totals["total_hours"] - remote_hours, 3),
+        hours_by_series={k: v["hours"] for k, v in totals["series"].items()},
+    )
     log.info(
-        "push plan (%s layout): %d rows (%d local), upload %d files, delete %d",
+        "push plan (%s layout): %d rows (%d local), upload %d files, delete %d | "
+        "%.2f h total (%+.2f h)",
         layout,
         len(merged),
         len(local_rows),
         len(upload),
         len(delete),
+        report.total_hours,
+        report.hours_added,
     )
     if dry_run:
         return report
@@ -501,6 +544,9 @@ def push(
             "uploaded": len(upload),
             "deleted": len(delete),
             "total_utterances": len(merged),
+            "total_hours": report.total_hours,
+            "hours_added": report.hours_added,
+            "hours_by_series": report.hours_by_series,
         },
     ]
     dataset_json = {
