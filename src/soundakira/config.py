@@ -179,6 +179,19 @@ class ExportConfig(_Strict):
     write_jsonl: bool = True
 
 
+class HubConfig(_Strict):
+    """Hugging Face Hub dataset repo that `soundakira push` maintains."""
+
+    repo_id: str | None = None  # falls back to $SOUNDAKIRA_HF_REPO
+    private: bool = True
+    branch: str = "main"
+    sync_registry: bool = True  # `build` pulls speaker_registry.json from the Hub first
+    commit_batch_size: int = 500
+
+    def resolved_repo_id(self) -> str | None:
+        return self.repo_id or os.environ.get("SOUNDAKIRA_HF_REPO") or None
+
+
 class StorageConfig(_Strict):
     keep_download: bool = True
     keep_source_audio: bool = True
@@ -201,6 +214,7 @@ class PipelineConfig(_Strict):
     references: ReferenceConfig = Field(default_factory=ReferenceConfig)
     export: ExportConfig = Field(default_factory=ExportConfig)
     storage: StorageConfig = Field(default_factory=StorageConfig)
+    hub: HubConfig = Field(default_factory=HubConfig)
 
     @model_validator(mode="after")
     def _check(self) -> PipelineConfig:

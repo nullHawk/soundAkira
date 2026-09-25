@@ -178,6 +178,42 @@ def run(
 
 
 @app.command()
+def push(
+    config: ConfigOpt = None,
+    set_: SetOpt = None,
+    repo: Annotated[
+        str | None,
+        typer.Option(help="Hub dataset repo (default: hub.repo_id / $SOUNDAKIRA_HF_REPO)."),
+    ] = None,
+    public: bool = typer.Option(
+        False, "--public", help="Create the repo as public (default private)."
+    ),
+    dry_run: bool = typer.Option(
+        False, "--dry-run", help="Show what would change; upload nothing."
+    ),
+    message: Annotated[str | None, typer.Option("--message", "-m", help="Commit message.")] = None,
+    verbose: VerboseOpt = False,
+) -> None:
+    """Merge the local build into the Hugging Face dataset repo (incremental)."""
+    from soundakira.hub import HubError
+    from soundakira.hub import push as hub_push
+
+    overrides = list(set_ or [])
+    if repo:
+        overrides.append(f"hub.repo_id={repo}")
+    if public:
+        overrides.append("hub.private=false")
+    cfg = _setup(config, overrides, verbose)
+    try:
+        report = hub_push(cfg, dry_run=dry_run, message=message)
+    except HubError as e:
+        raise _fail(e) from e
+    typer.echo(json.dumps(report.to_dict(), indent=2))
+    if not dry_run:
+        typer.echo(f"https://huggingface.co/datasets/{report.repo_id}")
+
+
+@app.command()
 def status(
     config: ConfigOpt = None,
     set_: SetOpt = None,
@@ -267,6 +303,7 @@ def doctor() -> None:
         ("nemo", "parakeet"),
         ("whisperx", "align"),
         ("transformers", "audioset"),
+        ("huggingface_hub", "hub"),
         ("torchmetrics", "quality"),
     ]:
         root = module.split(".")[0]

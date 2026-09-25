@@ -87,8 +87,12 @@ class FakeTranscriber(Transcriber):
         self, audio: np.ndarray, sr: int, speech: list[Span], language: str | None
     ) -> Transcript:
         words = []
-        for i, b in enumerate(_bursts(audio, sr)):
-            text = f" word{i}" + ("." if i % 6 == 5 else "")
+        bursts = _bursts(audio, sr)
+        for i, b in enumerate(bursts):
+            # Like real ASR: a sentence ends every few words and wherever the
+            # speaker stops (a long pause follows).
+            turn_end = i + 1 == len(bursts) or bursts[i + 1].start - b.end > 0.5
+            text = f" word{i}" + ("." if i % 6 == 5 or turn_end else "")
             words.append(Word(text, b.start, b.end, 0.9))
         segs = (
             [TranscriptSegment(words[0].start, words[-1].end, "", -0.2, 0.01, 1.2)] if words else []

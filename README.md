@@ -50,6 +50,8 @@ then `export HF_TOKEN=hf_...`.
 | `vad`, `diarization`, `asr` | Silero, pyannote, faster-whisper |
 | `parakeet`, `align` | NVIDIA NeMo Parakeet ASR, WhisperX forced alignment |
 | `quality` | DNSMOS scorer |
+| `audioset` | Speech/singing/music detector (transformers) |
+| `hub` | Publishing to the Hugging Face Hub (huggingface_hub) |
 
 ## Quickstart
 
@@ -102,6 +104,25 @@ dataset/
 | `asr_confidence`, `speaker_similarity`, `speech_ratio`, `overlap_ratio`, `snr_est_db`, ... | every metric, so you can re-filter without re-running |
 
 A reference is never the target clip and never overlaps it in time. By default it comes from a *different source* when possible, so the model learns the voice rather than the room.
+
+## Publishing to the Hugging Face Hub
+
+`soundakira push` publishes the dataset to a Hub dataset repo and keeps it up to date as you process more videos, on any machine:
+
+```bash
+export SOUNDAKIRA_HF_REPO=your-org/my-tts-dataset   # or hub.repo_id in the config
+export HF_TOKEN=hf_...                              # or `hf auth login`
+
+soundakira process new_videos.txt -c config.yaml
+soundakira build -c config.yaml     # pulls the Hub's speaker registry first
+soundakira push  -c config.yaml     # --dry-run to preview, --public to create a public repo
+```
+
+- **Incremental.** Only audio whose content changed is uploaded, tracked by hash in `manifest.json`. Audio no row references any more is deleted.
+- **Merging, not overwriting.** Rows for the videos in your local build replace those videos' old rows; everything pushed earlier, from any machine, is kept. `metadata.csv/jsonl`, `speakers.csv`, `dataset.json`, the train/test split and the dataset card are recomputed over the whole merged dataset, and every push is logged in `manifest.json`.
+- **Stable speaker list.** `speaker_registry.json` lives on the Hub. `build` pulls it before assigning IDs, so a voice already on the Hub keeps its ID and new voices get new IDs, even from a fresh machine. The registry keeps a voice profile per video for each speaker, so builds of different videos merge. A push refuses a build that wasn't based on the Hub registry, rather than letting IDs collide.
+- **Safe with concurrent pushes.** Commits are chained to the revision that was read, so a concurrent push fails instead of overwriting.
+- New repos are **private** by default. Only publish audio you have the rights to share.
 
 ## How it scales
 
