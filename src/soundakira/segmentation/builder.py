@@ -389,6 +389,9 @@ def build_segments(
         words = refine_words_with_vad(words, speech_index)
     speakers = assign_speakers(words, turns, params.speaker_max_distance)
     cased = is_cased(words)
+    # Unpunctuated ASR output (common for Hindi fine-tunes): sentence boundaries are
+    # unknown, so don't trim or flag clips as mid-sentence.
+    punctuated = any(ends_sentence(w.text) for w in words if w.kind == "word")
     speakers = snap_speaker_changes(words, speakers, turns, params.snap_speaker_changes)
     overlapped = overlapped_words(words, overlap_index, params.overlap_word_fraction)
 
@@ -400,9 +403,12 @@ def build_segments(
     breaks = other_speaker_breaks(words, speakers, turns_by_speaker)
     for speaker, run in build_runs(words, speakers, overlapped, params.max_pause, breaks):
         for raw_piece in split_run(words, run, params.max_duration, params.preferred_min_duration):
-            piece, clean_start, clean_end = trim_to_sentences(
-                raw_piece, words, params.trim_to_sentence, cased=cased
-            )
+            if punctuated:
+                piece, clean_start, clean_end = trim_to_sentences(
+                    raw_piece, words, params.trim_to_sentence, cased=cased
+                )
+            else:
+                piece, clean_start, clean_end = raw_piece, True, True
             seg = _make_segment(
                 source_id,
                 speaker,
@@ -416,8 +422,9 @@ def build_segments(
                 params,
             )
             if seg is not None:
-                seg.metrics["sentence_start"] = float(clean_start)
-                seg.metrics["sentence_end"] = float(clean_end)
+                if punctuated:
+                    seg.metrics["sentence_start"] = float(clean_start)
+                    seg.metrics["sentence_end"] = float(clean_end)
                 segments.append(seg)
     return segments
 

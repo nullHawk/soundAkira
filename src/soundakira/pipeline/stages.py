@@ -311,7 +311,7 @@ class TranscribeStage(Stage):
 
 class SegmentStage(Stage):
     name = "segment"
-    version = "3"  # 2: snapping, sentence trimming, lowercase check; 3: other_speaker_s
+    version = "4"  # 2: snapping, trimming, lowercase; 3: other_speaker_s; 4: unpunctuated ASR
     requires = ("vad", "diarize", "transcribe")
 
     def params(self) -> dict[str, Any]:

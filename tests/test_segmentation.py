@@ -219,3 +219,19 @@ def test_other_speaker_time_reports_what_splitting_cannot_fix():
         SegmentationParams(min_duration=1, overlap_word_fraction=1.1),
     )
     assert max(s.metrics["other_speaker_s"] for s in segs) > 0.5
+
+
+def test_unpunctuated_transcripts_skip_sentence_logic():
+    # e.g. a Hindi ASR that emits no punctuation: clips must not be trimmed away or
+    # flagged mid-sentence (which would also empty the reference pool).
+    words = [Word(f" शब्द{i}", i * 0.5, i * 0.5 + 0.4, 0.9) for i in range(20)]
+    segs = build_segments(
+        "s",
+        Transcript("hi", 1, words),
+        [Turn(0, 10, "A")],
+        [],
+        10,
+        SegmentationParams(min_duration=1),
+    )
+    assert len(segs) == 1 and len(segs[0].words) == 20
+    assert "sentence_start" not in segs[0].metrics
