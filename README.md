@@ -111,7 +111,8 @@ A reference is never the target clip and never overlaps it in time. By default i
 
 ```bash
 export SOUNDAKIRA_HF_REPO=your-org/my-tts-dataset   # or hub.repo_id in the config
-export HF_TOKEN=hf_...                              # or `hf auth login`
+export SOUNDAKIRA_HF_TOKEN=hf_...                   # write token of the account that owns the repo
+                                                    # (falls back to HF_TOKEN / `hf auth login`)
 
 soundakira process new_videos.txt -c config.yaml
 soundakira build -c config.yaml     # pulls the Hub's speaker registry first

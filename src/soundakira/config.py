@@ -183,6 +183,10 @@ class HubConfig(_Strict):
     """Hugging Face Hub dataset repo that `soundakira push` maintains."""
 
     repo_id: str | None = None  # falls back to $SOUNDAKIRA_HF_REPO
+    # Token for the account that owns the dataset repo. Falls back to
+    # $SOUNDAKIRA_HF_TOKEN, then to the model-download token (hf_token / $HF_TOKEN /
+    # saved login). Keep it separate when publishing under another account.
+    token: str | None = None
     private: bool = True
     branch: str = "main"
     sync_registry: bool = True  # `build` pulls speaker_registry.json from the Hub first
@@ -190,6 +194,9 @@ class HubConfig(_Strict):
 
     def resolved_repo_id(self) -> str | None:
         return self.repo_id or os.environ.get("SOUNDAKIRA_HF_REPO") or None
+
+    def resolved_token(self, fallback: str | None) -> str | None:
+        return self.token or os.environ.get("SOUNDAKIRA_HF_TOKEN") or fallback
 
 
 class StorageConfig(_Strict):

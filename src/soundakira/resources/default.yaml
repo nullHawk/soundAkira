@@ -145,6 +145,8 @@ storage:
 
 hub:                        # `soundakira push`: publish + incrementally maintain on the HF Hub
   repo_id: null             # e.g. your-org/my-tts-dataset; falls back to $SOUNDAKIRA_HF_REPO
+  token: null               # publishing account's token; falls back to $SOUNDAKIRA_HF_TOKEN,
+                            # then the model-download token (hf_token / $HF_TOKEN / saved login)
   private: true             # new repos are created private
   branch: main
   sync_registry: true       # `build` pulls the Hub's speaker registry so speaker IDs stay stable

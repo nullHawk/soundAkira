@@ -67,6 +67,9 @@ class HfBackend:
     def ensure_repo(self, private: bool) -> None:
         self.api.create_repo(self.repo_id, repo_type="dataset", private=private, exist_ok=True)
 
+    def whoami(self) -> str:
+        return str(self.api.whoami()["name"])
+
     def head(self) -> str | None:
         try:
             return self.api.repo_info(self.repo_id, repo_type="dataset", revision=self.branch).sha
@@ -117,7 +120,7 @@ def backend_for(cfg: PipelineConfig) -> HfBackend:
     repo = cfg.hub.resolved_repo_id()
     if not repo:
         raise HubError("no Hub repo configured: set SOUNDAKIRA_HF_REPO or hub.repo_id")
-    return HfBackend(repo, cfg.resolved_hf_token(), cfg.hub.branch)
+    return HfBackend(repo, cfg.hub.resolved_token(cfg.resolved_hf_token()), cfg.hub.branch)
 
 
 # -- pure planning logic ---------------------------------------------------------
@@ -293,6 +296,11 @@ def push(
     registry_path = cfg.work_dir / "speakers" / "registry.json"
     local_registry = read_json(registry_path) if registry_path.exists() else {}
 
+    who = getattr(backend, "whoami", None)
+    if who is not None:
+        log.info(
+            "Hub account: %s -> %s (%s)", who(), repo, "private" if cfg.hub.private else "public"
+        )
     if not dry_run:
         backend.ensure_repo(cfg.hub.private)
     head = backend.head()
