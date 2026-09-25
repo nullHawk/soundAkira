@@ -25,3 +25,6 @@ dist/
 .DS_Store
 .idea/
 .vscode/
+
+# Local Claude Code skills (not published)
+/.claude/
