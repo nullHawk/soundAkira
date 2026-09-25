@@ -176,3 +176,25 @@ def test_intruder_stats_is_relative():
     assert secs == 0.75 and worst < -0.5
     # Single-speaker source: nothing to compare against.
     assert intruder_stats(mixed, own, [], 0.1, 0.75) == (0.0, 1.0)
+
+
+def test_registry_merges_members_across_builds_of_different_sources(tmp_path):
+    reg = SpeakerRegistry.load(tmp_path / "r.json")
+    alice_a = unit(1, 0.05, 0)
+    [aid] = reg.assign(
+        [Cluster(alice_a, ["ep1:S0"], 60, profiles={"ep1:S0": (alice_a, 60)})], 0.6, {"ep1"}
+    )
+    # Another machine builds only ep2 and finds alice again.
+    alice_b = unit(1, -0.05, 0)
+    [bid] = reg.assign(
+        [Cluster(alice_b, ["ep2:S3"], 20, profiles={"ep2:S3": (alice_b, 20)})], 0.6, {"ep2"}
+    )
+    assert bid == aid
+    entry = reg.speakers[aid]
+    assert set(entry["members"]) == {"ep1:S0", "ep2:S3"}  # ep1 kept, ep2 added
+    assert entry["duration"] == 80
+    # Centroid is the duration-weighted blend, not just the latest build.
+    assert np.array(entry["centroid"])[1] > 0
+    # Rebuilding ep1 replaces only ep1's member.
+    reg.assign([Cluster(alice_a, ["ep1:S1"], 30, profiles={"ep1:S1": (alice_a, 30)})], 0.6, {"ep1"})
+    assert set(reg.speakers[aid]["members"]) == {"ep1:S1", "ep2:S3"}

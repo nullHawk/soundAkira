@@ -22,6 +22,7 @@ from soundakira import __version__, registry
 from soundakira.audio.io import read_audio, resample
 from soundakira.components.base import ComponentContext, SpeakerEmbedder
 from soundakira.config import PipelineConfig
+from soundakira.dataset import summary
 from soundakira.dataset.export import ClipJob, run_clip_jobs, write_csv
 from soundakira.dataset.filters import first_failure
 from soundakira.dataset.references import Reference, assign_reference, build_reference_pool
@@ -189,8 +190,13 @@ def build_dataset(
     clusters: list[Cluster] = build_clusters(locals_, labels)
     if sp.anchors_dir:
         clusters = apply_anchors(clusters, _load_anchors(cfg, ctx), sp.anchor_threshold)
-    reg = SpeakerRegistry.load(cfg.work_dir / "speakers" / "registry.json")
-    ids = reg.assign(clusters, sp.registry_match_similarity)
+    registry_path = cfg.work_dir / "speakers" / "registry.json"
+    if cfg.hub.resolved_repo_id() and cfg.hub.sync_registry:
+        from soundakira.hub import pull_registry
+
+        pull_registry(cfg, registry_path)
+    reg = SpeakerRegistry.load(registry_path)
+    ids = reg.assign(clusters, sp.registry_match_similarity, local_sources=set(ws_by_source))
     reg.save()
     member_to_id = {m: sid for c, sid in zip(clusters, ids) for m in c.members}
     centroid_of = {sid: c.centroid for c, sid in zip(clusters, ids)}
@@ -333,66 +339,14 @@ def build_dataset(
     if exp.write_jsonl:
         write_jsonl(out / "metadata.jsonl", rows)
 
-    per_speaker: dict[int, dict[str, Any]] = {}
-    for row in rows:
-        agg = per_speaker.setdefault(
-            row["speaker_id"],
-            {
-                "speaker_id": row["speaker_id"],
-                "speaker_name": row["speaker_name"],
-                "split": row["split"],
-                "num_utterances": 0,
-                "total_duration_s": 0.0,
-                "sources": set(),
-                "references": set(),
-            },
-        )
-        agg["num_utterances"] += 1
-        agg["total_duration_s"] += row["duration"]
-        agg["sources"].add(row["source_id"])
-        if row["ref_id"]:
-            agg["references"].add(row["ref_id"])
-    speaker_rows = [
-        {
-            **agg,
-            "total_duration_s": round(agg["total_duration_s"], 2),
-            "num_sources": len(agg["sources"]),
-            "num_references": len(agg["references"]),
-            "sources": ";".join(sorted(agg["sources"])),
-        }
-        for agg in sorted(per_speaker.values(), key=lambda a: a["speaker_id"])
-    ]
-    write_csv(
-        out / "speakers.csv",
-        speaker_rows,
-        [
-            "speaker_id",
-            "speaker_name",
-            "split",
-            "num_utterances",
-            "total_duration_s",
-            "num_sources",
-            "num_references",
-            "sources",
-        ],
-    )
-
-    hours = sum(r["duration"] for r in rows) / 3600
-    by_split: dict[str, dict[str, float]] = defaultdict(
-        lambda: {"utterances": 0, "hours": 0.0, "speakers": 0}
-    )
-    for r in rows:
-        by_split[r["split"]]["utterances"] += 1
-        by_split[r["split"]]["hours"] += r["duration"] / 3600
-    for spk_row in speaker_rows:
-        by_split[spk_row["split"]]["speakers"] += 1
-    languages = Counter(r["language"] for r in rows)
+    speakers = summary.speaker_rows(rows)
+    summary.write_speakers_csv(out / "speakers.csv", speakers)
     report = BuildReport(
         str(out),
         len(workspaces),
         len(speakers_in_data),
         len(rows),
-        round(hours, 3),
+        round(sum(r["duration"] for r in rows) / 3600, 3),
         dict(sorted(drops.items())),
     )
     write_json(
@@ -400,13 +354,9 @@ def build_dataset(
         {
             "created_at": now_iso(),
             "soundakira_version": __version__,
-            "total_speakers": len(speakers_in_data),
-            "total_utterances": len(rows),
-            "total_hours": round(hours, 3),
-            "num_sources": len(workspaces),
+            **summary.totals(rows, speakers),
+            "source_ids": sorted(ws_by_source),
             "sample_rate": exp.sample_rate,
-            "splits": {k: {**v, "hours": round(v["hours"], 3)} for k, v in by_split.items()},
-            "languages": dict(languages),
             "drop_reasons": report.drop_reasons,
             "reference_candidates_rejected": ref_rejects,
             "config": cfg.model_dump(mode="json", exclude={"hf_token"}),

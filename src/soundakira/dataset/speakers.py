@@ -107,6 +107,10 @@ def cluster_centroids(
     return dense
 
 
+def _source_of(member: str) -> str:
+    return member.rsplit(":", 1)[0]
+
+
 @dataclass
 class Cluster:
     centroid: np.ndarray
@@ -114,6 +118,8 @@ class Cluster:
     duration: float
     name: str | None = None
     anchor_similarity: float | None = None
+    # Per-member voice profile (centroid, seconds) so the registry can merge exactly.
+    profiles: dict[str, tuple[np.ndarray, float]] = field(default_factory=dict)
 
 
 def build_clusters(locals_: list[LocalSpeaker], labels: np.ndarray) -> list[Cluster]:
@@ -124,7 +130,8 @@ def build_clusters(locals_: list[LocalSpeaker], labels: np.ndarray) -> list[Clus
     for _, members in sorted(groups.items()):
         w = np.array([m.duration for m in members])
         c = l2norm((np.stack([m.centroid for m in members]) * w[:, None]).sum(0))
-        clusters.append(Cluster(c, sorted(m.key for m in members), float(w.sum())))
+        profiles = {m.key: (m.centroid, m.duration) for m in members}
+        clusters.append(Cluster(c, sorted(profiles), float(w.sum()), profiles=profiles))
     return clusters
 
 
@@ -149,13 +156,22 @@ def apply_anchors(
         w = np.array([c.duration for c, _ in matched])
         centroid = l2norm((np.stack([c.centroid for c, _ in matched]) * w[:, None]).sum(0))
         members = sorted(m for c, _ in matched for m in c.members)
-        out.append(Cluster(centroid, members, float(w.sum()), name, max(s for _, s in matched)))
+        profiles = {k: v for c, _ in matched for k, v in c.profiles.items()}
+        out.append(
+            Cluster(centroid, members, float(w.sum()), name, max(s for _, s in matched), profiles)
+        )
     return out
 
 
 @dataclass
 class SpeakerRegistry:
-    """Persistent global-ID table (work_dir/speakers/registry.json)."""
+    """Persistent global-ID table (work_dir/speakers/registry.json; mirrored to
+    the Hub by `push`).
+
+    Each speaker keeps a voice profile per member (source:label), so builds
+    covering different sources, possibly on different machines, merge instead
+    of overwriting each other. IDs are never reused.
+    """
 
     path: Path
     next_id: int = 0
@@ -166,7 +182,14 @@ class SpeakerRegistry:
         if not path.exists():
             return cls(path)
         data = read_json(path)
-        return cls(path, data["next_id"], {int(k): v for k, v in data["speakers"].items()})
+        speakers = {int(k): v for k, v in data["speakers"].items()}
+        for v in speakers.values():
+            if isinstance(v.get("members"), list):  # v1 format: bare member list
+                share = v.get("duration", 0.0) / max(1, len(v["members"]))
+                v["members"] = {
+                    m: {"duration": share, "centroid": v["centroid"]} for m in v["members"]
+                }
+        return cls(path, data["next_id"], speakers)
 
     def save(self) -> None:
         write_json(
@@ -177,9 +200,34 @@ class SpeakerRegistry:
             },
         )
 
-    def assign(self, clusters: list[Cluster], match_similarity: float) -> list[int]:
+    @staticmethod
+    def _profile_entry(centroid: np.ndarray, duration: float) -> dict[str, Any]:
+        return {"duration": round(duration, 2), "centroid": [round(float(x), 6) for x in centroid]}
+
+    def _recompute(self, sid: int) -> None:
+        entry = self.speakers[sid]
+        members = entry["members"]
+        if not members:
+            return  # ID stays reserved with its last known centroid
+        w = np.array([m["duration"] for m in members.values()], dtype=np.float64)
+        c = np.array([m["centroid"] for m in members.values()], dtype=np.float64)
+        entry["centroid"] = [round(float(x), 6) for x in l2norm((c * w[:, None]).sum(0))]
+        entry["duration"] = round(float(w.sum()), 2)
+
+    def assign(
+        self,
+        clusters: list[Cluster],
+        match_similarity: float,
+        local_sources: set[str] | None = None,
+    ) -> list[int]:
         """Stable IDs: greedy one-to-one matching of voices (centroid similarity
-        >= match_similarity), preferring old speakers that share members."""
+        >= match_similarity), preferring old speakers that share members.
+
+        Members from `local_sources` (default: every source in `clusters`) are
+        re-derived from this build. Members from other sources are kept.
+        """
+        if local_sources is None:
+            local_sources = {_source_of(m) for c in clusters for m in c.members}
         old_ids = sorted(self.speakers)
         pairs: list[tuple[int, float, int, int]] = []
         if old_ids and clusters:
@@ -210,14 +258,19 @@ class SpeakerRegistry:
                 ids[ci] = self.next_id
                 self.next_id += 1
 
+        # Local members are re-derived below; members from other sources stay.
+        for entry in self.speakers.values():
+            entry["members"] = {
+                k: v for k, v in entry["members"].items() if _source_of(k) not in local_sources
+            }
         for ci, c in enumerate(clusters):
             sid = ids[ci]
             assert sid is not None
-            prev = self.speakers.get(sid, {})
-            self.speakers[sid] = {
-                "name": c.name or prev.get("name"),
-                "centroid": [round(float(x), 6) for x in c.centroid],
-                "members": c.members,
-                "duration": round(c.duration, 2),
-            }
+            entry = self.speakers.setdefault(sid, {"name": None, "members": {}})
+            entry["name"] = c.name or entry.get("name")
+            for key in c.members:
+                cen, dur = c.profiles.get(key, (c.centroid, c.duration / len(c.members)))
+                entry["members"][key] = self._profile_entry(cen, dur)
+        for sid in self.speakers:
+            self._recompute(sid)
         return [int(i) for i in ids]  # type: ignore[arg-type]
