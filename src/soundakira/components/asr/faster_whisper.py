@@ -17,6 +17,8 @@ The defaults lean towards dataset quality over speed.
 from __future__ import annotations
 
 import contextlib
+import logging
+from pathlib import Path
 from typing import Any
 
 import numpy as np
@@ -25,6 +27,46 @@ from pydantic import BaseModel, ConfigDict, Field
 from soundakira.components.base import Transcriber
 from soundakira.types import Span, Transcript, TranscriptSegment, Word
 from soundakira.utils.device import resolve_device, split_cuda_device
+
+log = logging.getLogger(__name__)
+
+
+def _is_ct2_dir(path: Path) -> bool:
+    return (path / "model.bin").exists()
+
+
+def resolve_model(model: str, cache_root: Path) -> str:
+    """Accept faster-whisper names ("large-v3"), CTranslate2 repos/dirs, *and*
+    Hugging Face Transformers Whisper checkpoints (e.g. Hindi fine-tunes such as
+    "ARTPARK-IISc/whisper-large-v3-vaani-hindi"). The latter are converted once to
+    CTranslate2 float16 and cached."""
+    local = Path(model).expanduser()
+    if local.is_dir():
+        if _is_ct2_dir(local):
+            return str(local)
+        source = str(local)
+    elif "/" in model:
+        from huggingface_hub import list_repo_files
+
+        files = set(list_repo_files(model))
+        if "model.bin" in files:  # already CTranslate2 (e.g. Systran/faster-whisper-*)
+            return model
+        source = model
+    else:
+        return model  # built-in faster-whisper size name
+    out = cache_root / source.strip("/").replace("/", "--")
+    if not _is_ct2_dir(out):
+        from ctranslate2.converters import TransformersConverter
+        from transformers import WhisperTokenizerFast
+
+        log.info("converting %s to CTranslate2 (one-time) -> %s", source, out)
+        TransformersConverter(
+            source, copy_files=["preprocessor_config.json"], load_as_float16=True
+        ).convert(str(out), quantization="float16", force=True)
+        # Fine-tunes often ship only vocab.json/merges.txt. faster-whisper would then
+        # fall back to a generic tokenizer whose ids don't match large-v3 models.
+        WhisperTokenizerFast.from_pretrained(source).save_pretrained(str(out))
+    return str(out)
 
 
 class FasterWhisperParams(BaseModel):
@@ -64,8 +106,9 @@ class FasterWhisperTranscriber(Transcriber):
         compute = self.params.compute_type
         if compute == "auto":
             compute = "float16" if device == "cuda" else "int8"
+        cache_root = (self.ctx.cache_dir or Path.home() / ".cache" / "soundakira") / "ct2"
         self._model = WhisperModel(
-            self.params.model,
+            resolve_model(self.params.model, cache_root),
             device=device,
             device_index=index,
             compute_type=compute,
