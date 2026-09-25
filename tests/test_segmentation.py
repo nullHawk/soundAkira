@@ -184,3 +184,38 @@ def test_lowercase_continuation_is_not_a_sentence_start():
         Word(" हैं।", 1.5, 1.9),
     ]
     assert trim_to_sentences([1, 2, 3], hi, 4.0) == ([1, 2, 3], True, True)
+
+
+def test_untranscribed_interjection_in_a_pause_splits_the_clip():
+    # A talks 0-3.9 s and 5.1-9 s; in the 1.2 s pause B says an untranscribed
+    # "Huh?" (4.0-5.0 s). The pause is shorter than max_pause, but B's turn
+    # must still split A's utterance so neither clip contains B's voice.
+    times = [(i, i + 0.9) for i in range(4)] + [(5.1 + i, 6.0 + i) for i in range(4)]
+    words = [
+        Word(f" w{i}" + ("." if i in (3, 7) else ""), s, e, 0.9) for i, (s, e) in enumerate(times)
+    ]
+    turns = [Turn(0, 3.95, "A"), Turn(4.0, 5.0, "B"), Turn(5.05, 9.5, "A")]
+    segs = build_segments(
+        "s", Transcript("en", 1, words), turns, [], 10, SegmentationParams(min_duration=1)
+    )
+    assert [s.speaker for s in segs] == ["A", "A"]
+    assert segs[0].end <= 4.0 and segs[1].start >= 5.0
+    assert all(s.metrics["other_speaker_s"] == 0.0 for s in segs)
+
+
+def test_other_speaker_time_reports_what_splitting_cannot_fix():
+    # B's turn overlaps the middle of A's words (diarization disagrees with the
+    # word assignment): no pause to split at, so it is reported instead.
+    words = [
+        Word(f" w{i}" + ("." if i == 9 else ""), i * 1.0, i * 1.0 + 0.95, 0.9) for i in range(10)
+    ]
+    turns = [Turn(0, 10, "A"), Turn(4.2, 4.8, "B")]
+    segs = build_segments(
+        "s",
+        Transcript("en", 1, words),
+        turns,
+        [],
+        10,
+        SegmentationParams(min_duration=1, overlap_word_fraction=1.1),
+    )
+    assert max(s.metrics["other_speaker_s"] for s in segs) > 0.5

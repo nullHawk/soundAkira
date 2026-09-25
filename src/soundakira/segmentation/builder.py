@@ -255,8 +255,38 @@ def trim_to_sentences(
     return piece, clean_start, clean_end
 
 
+def other_speaker_breaks(
+    words: list[Word],
+    speakers: list[str | None],
+    turns_by_speaker: dict[str, list[Turn]],
+    min_other: float = 0.3,
+) -> set[int]:
+    """Word indices i where the pause before words[i] holds at least `min_other`
+    seconds of another speaker's diarized speech that ASR didn't transcribe
+    (e.g. "Huh?", a laugh). The utterance must break there."""
+    breaks: set[int] = set()
+    for i in range(1, len(words)):
+        spk = speakers[i]
+        g0, g1 = words[i - 1].end, words[i].start
+        if spk is None or speakers[i - 1] != spk or g1 - g0 < min_other:
+            continue
+        covered = sum(
+            max(0.0, min(g1, t.end) - max(g0, t.start))
+            for other, turns in turns_by_speaker.items()
+            if other != spk
+            for t in turns
+        )
+        if covered >= min_other:
+            breaks.add(i)
+    return breaks
+
+
 def build_runs(
-    words: list[Word], speakers: list[str | None], overlapped: list[bool], max_pause: float
+    words: list[Word],
+    speakers: list[str | None],
+    overlapped: list[bool],
+    max_pause: float,
+    breaks: set[int] | None = None,
 ) -> list[tuple[str, list[int]]]:
     """Consecutive same-speaker word indices; events attach to the open run."""
     runs: list[tuple[str, list[int]]] = []
@@ -273,7 +303,7 @@ def build_runs(
                 runs.append(cur)
             cur = None
             continue
-        if cur is not None and cur[0] == spk and gap_ok:
+        if cur is not None and cur[0] == spk and gap_ok and not (breaks and i in breaks):
             cur[1].append(i)
         else:
             if cur is not None:
@@ -316,6 +346,28 @@ def split_run(
     return pieces
 
 
+def _other_speaker_time(
+    speaker: str,
+    start: float,
+    end: float,
+    turns_by_speaker: dict[str, list[Turn]],
+    p: SegmentationParams,
+) -> float:
+    """Seconds inside the clip that diarization assigns to other speakers,
+    usually an untranscribed interjection ("Huh?") sitting in a pause. The
+    edges are excluded because speaker-change snapping may legitimately reach
+    into another speaker's (imprecise) turn there."""
+    lo, hi = start + p.snap_speaker_changes, end - p.snap_speaker_changes
+    if hi <= lo:
+        return 0.0
+    return sum(
+        max(0.0, min(hi, t.end) - max(lo, t.start))
+        for other, turns in turns_by_speaker.items()
+        if other != speaker
+        for t in turns
+    )
+
+
 def _weighted_mean(values: list[tuple[float, float]]) -> float | None:
     total = sum(w for _, w in values)
     return sum(v * w for v, w in values) / total if total > 0 else None
@@ -345,7 +397,8 @@ def build_segments(
         turns_by_speaker[t.speaker].append(t)
 
     segments: list[Segment] = []
-    for speaker, run in build_runs(words, speakers, overlapped, params.max_pause):
+    breaks = other_speaker_breaks(words, speakers, turns_by_speaker)
+    for speaker, run in build_runs(words, speakers, overlapped, params.max_pause, breaks):
         for raw_piece in split_run(words, run, params.max_duration, params.preferred_min_duration):
             piece, clean_start, clean_end = trim_to_sentences(
                 raw_piece, words, params.trim_to_sentence, cased=cased
@@ -429,6 +482,7 @@ def _make_segment(
         "speech_ratio": speech_index.ratio(start, end) if speech_index.spans else 1.0,
         "overlap_ratio": overlap_index.ratio(start, end),
         "max_word_gap": max(gaps, default=0.0),
+        "other_speaker_s": _other_speaker_time(speaker, start, end, turns_by_speaker, p),
     }
     if probs:
         metrics["asr_confidence"] = float(np.mean(probs))
