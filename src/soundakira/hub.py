@@ -361,6 +361,14 @@ def write_parquet_shard(
     pq.write_table(table, dest, compression="zstd")
 
 
+def public_uri(uri: str | None) -> str | None:
+    """URLs are published as-is; local paths are reduced to the file name, since
+    they reveal machine/filesystem details."""
+    if not uri or uri.startswith(("http://", "https://")):
+        return uri
+    return Path(uri).name
+
+
 def shard_path(source_id: str) -> str:
     return f"data/{source_id}.parquet"
 
@@ -438,6 +446,8 @@ def push(
     )
 
     merged = merge_rows(remote_rows, local_rows, local_sources)
+    for r in merged:  # also cleans rows published by older versions
+        r["source_uri"] = public_uri(r.get("source_uri"))
     split = cfg.export.split
     test = choose_test_speakers(
         sorted({int(r["speaker_id"]) for r in merged}), split.test_speaker_fraction, split.seed

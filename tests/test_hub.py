@@ -131,6 +131,8 @@ def test_two_machines_share_speaker_ids_and_merge(tmp_path, remote):
     assert len(manifest["history"]) == 2
     assert set(manifest["files"]) == {hub.shard_path(r["source_id"]) for r in rows}
     assert json.loads(remote.files["dataset.json"])["total_speakers"] == 3
+    assert not any(str(r["source_uri"]).startswith("/") for r in rows)  # no local paths
+    assert str(tmp_path) not in remote.files["metadata.csv"].decode()
     readme = remote.files["README.md"].decode()
     assert "data/*.parquet" in readme and "soundakira" not in readme.lower()
 
