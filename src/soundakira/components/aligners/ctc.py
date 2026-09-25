@@ -96,16 +96,11 @@ class CTCAligner(Aligner):
         total = len(audio) / sr
         out: list[Word] = []
         failed = 0
-        for seg in transcript.segments:
+        segs = transcript.segments
+        for k, seg in enumerate(segs):
             texts = seg.text.split()
             if not texts:
                 continue
-            s0, s1 = max(0.0, seg.start - self.params.pad), min(total, seg.end + self.params.pad)
-            clip = audio[int(s0 * sr) : int(s1 * sr)]
-            if len(clip) < sr // 10:
-                continue
-            emission = self._emission(clip)
-            frame_s = (s1 - s0) / emission.shape[0]
             # Token sequence: characters of each word, words joined by the delimiter.
             tokens: list[int] = []
             owner: list[int] = []  # word index per token (-1 for delimiters)
@@ -116,7 +111,28 @@ class CTCAligner(Aligner):
                     owner.append(-1)
                 tokens += ids
                 owner += [wi] * len(ids)
-            frames = ctc_align(emission, tokens, self._blank)
+            # ASR segment boundaries can be off too. If the text doesn't fit, retry
+            # with the window widened to the neighbouring segments' boundaries.
+            prev_end = segs[k - 1].end if k > 0 else 0.0
+            next_start = segs[k + 1].start if k + 1 < len(segs) else total
+            windows = [
+                (seg.start - self.params.pad, seg.end + self.params.pad),
+                (
+                    min(seg.start, prev_end) - self.params.pad,
+                    max(seg.end, next_start) + self.params.pad,
+                ),
+            ]
+            frames = None
+            for w0, w1 in windows:
+                s0, s1 = max(0.0, w0), min(total, w1)
+                clip = audio[int(s0 * sr) : int(s1 * sr)]
+                if len(clip) < sr // 10:
+                    break
+                emission = self._emission(clip)
+                frames = ctc_align(emission, tokens, self._blank)
+                if frames is not None:
+                    frame_s = (s1 - s0) / emission.shape[0]
+                    break
             if frames is None:
                 failed += 1
                 continue
