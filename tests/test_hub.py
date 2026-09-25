@@ -30,8 +30,10 @@ class MemoryHub:
         self.sha: str | None = None
         self.commits = 0
         self.private: bool | None = None
+        self.ensure_calls = 0
 
     def ensure_repo(self, private: bool) -> None:
+        self.ensure_calls += 1
         if self.private is None:
             self.private = private
 
@@ -114,9 +116,10 @@ def test_two_machines_share_speaker_ids_and_merge(tmp_path, remote):
     assert by_source["epone"] == ids_a  # machine A's rows kept, same IDs
     assert ids_a < by_source["eptwo"]  # alice/bob reused their IDs...
     assert len(by_source["eptwo"] - ids_a) == 1  # ...carol got exactly one new ID
-    # Incremental: machine A's audio was not re-uploaded.
-    for r in rows_a:
-        assert remote.files[r["audio_path"]] == before[r["audio_path"]]
+    # Incremental: machine A's shard was not rewritten or re-uploaded.
+    shard_a = hub.shard_path(rows_a[0]["source_id"])
+    assert remote.files[shard_a] == before[shard_a]
+    assert remote.ensure_calls == 1  # repo created once, never re-created
     assert (
         rep_b.total_utterances
         == len(rows)
@@ -126,19 +129,40 @@ def test_two_machines_share_speaker_ids_and_merge(tmp_path, remote):
     assert len(speakers) == 3
     manifest = json.loads(remote.files["manifest.json"])
     assert len(manifest["history"]) == 2
-    assert set(manifest["files"]) == hub.referenced_files(rows)
+    assert set(manifest["files"]) == {hub.shard_path(r["source_id"]) for r in rows}
     assert json.loads(remote.files["dataset.json"])["total_speakers"] == 3
+    readme = remote.files["README.md"].decode()
+    assert "data/*.parquet" in readme and "soundakira" not in readme.lower()
 
     # Re-pushing the same build uploads nothing.
     assert hub.push(cfg_b).uploaded == 0
 
 
-def test_rebuilding_a_source_replaces_its_rows_and_deletes_stale_audio(tmp_path, remote):
+def test_rebuilding_a_source_rewrites_only_its_shard(tmp_path, remote):
     cfg, _ = _machine(tmp_path, "ep", [("alice", 16), ("bob", 14), ("alice", 6), ("bob", 6)])
     build_dataset(cfg)
     hub.push(cfg)
     n_before = len(remote.rows())
+    shard = hub.shard_path(remote.rows()[0]["source_id"])
+    old = remote.files[shard]
     # Stricter export: keeps the ~8.2 s clip, drops the ~7.2 s one.
+    cfg2 = cfg.model_copy(update={"export": cfg.export.model_copy(update={"min_duration": 7.6})})
+    build_dataset(cfg2, clean=True)
+    rep = hub.push(cfg2)
+    assert 0 < len(remote.rows()) < n_before
+    assert rep.uploaded == 1 and remote.files[shard] != old
+
+
+def test_files_layout_deletes_stale_audio(tmp_path, remote):
+    cfg, _ = _machine(
+        tmp_path,
+        "ep",
+        [("alice", 16), ("bob", 14), ("alice", 6), ("bob", 6)],
+        ["hub.audio_layout=files"],
+    )
+    build_dataset(cfg)
+    hub.push(cfg)
+    n_before = len(remote.rows())
     cfg2 = cfg.model_copy(update={"export": cfg.export.model_copy(update={"min_duration": 7.6})})
     build_dataset(cfg2, clean=True)
     rep = hub.push(cfg2)
@@ -146,6 +170,27 @@ def test_rebuilding_a_source_replaces_its_rows_and_deletes_stale_audio(tmp_path,
     assert 0 < len(rows) < n_before and rep.deleted > 0
     assert set(json.loads(remote.files["manifest.json"])["files"]) == hub.referenced_files(rows)
     assert all(p in remote.files for p in hub.referenced_files(rows))
+
+
+def test_parquet_shard_has_playable_audio_columns(tmp_path, remote):
+    import pyarrow.parquet as pq
+    import soundfile as sf
+
+    cfg, _ = _machine(tmp_path, "ep", [("alice", 16), ("bob", 14), ("alice", 6), ("bob", 6)])
+    build_dataset(cfg)
+    hub.push(cfg)
+    shard = hub.shard_path(remote.rows()[0]["source_id"])
+    path = tmp_path / "shard.parquet"
+    path.write_bytes(remote.files[shard])
+    table = pq.read_table(path)
+    features = json.loads(table.schema.metadata[b"huggingface"])["info"]["features"]
+    assert features["audio"]["_type"] == "Audio" and features["ref_audio"]["_type"] == "Audio"
+    assert features["audio"]["sampling_rate"] == 24000
+    first = table.column("audio")[0].as_py()
+    audio, sr = sf.read(io.BytesIO(first["bytes"]))
+    assert sr == 24000 and len(audio) / sr > 5
+    assert table.column("ref_audio")[0].as_py()["bytes"]
+    assert set(json.loads(table.column("metrics")[0].as_py())) >= {"asr_confidence", "intruder_s"}
 
 
 def test_push_refuses_a_build_not_based_on_the_hub_registry(tmp_path, remote):

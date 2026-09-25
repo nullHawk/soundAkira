@@ -150,4 +150,5 @@ hub:                        # `soundakira push`: publish + incrementally maintai
   private: true             # new repos are created private
   branch: main
   sync_registry: true       # `build` pulls the Hub's speaker registry so speaker IDs stay stable
+  audio_layout: parquet     # parquet (Hub audio players, load_dataset) | files (loose wavs)
   commit_batch_size: 500    # audio files per commit

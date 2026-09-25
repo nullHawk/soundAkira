@@ -27,6 +27,7 @@ import hashlib
 import io
 import json
 import logging
+import shutil
 from collections.abc import Iterable
 from dataclasses import asdict, dataclass
 from pathlib import Path
@@ -72,7 +73,13 @@ class HfBackend:
 
     def head(self) -> str | None:
         try:
-            return self.api.repo_info(self.repo_id, repo_type="dataset", revision=self.branch).sha
+            info = self.api.repo_info(self.repo_id, repo_type="dataset", revision=self.branch)
+            if info.id != self.repo_id:  # renamed on the Hub: follow it
+                log.warning(
+                    "Hub repo %s was renamed to %s; using the new name", self.repo_id, info.id
+                )
+                self.repo_id = info.id
+            return info.sha
         except Exception as e:
             if type(e).__name__ in ("RepositoryNotFoundError", "RevisionNotFoundError"):
                 return None
@@ -141,21 +148,27 @@ def referenced_files(rows: Iterable[dict[str, Any]]) -> set[str]:
     return out
 
 
-def plan_files(
-    rows: list[dict[str, Any]], local: dict[str, str], remote: dict[str, str]
+def plan_paths(
+    needed: set[str], local: dict[str, str], remote: dict[str, str]
 ) -> tuple[list[str], list[str], dict[str, str]]:
     """(paths to upload, paths to delete, new manifest {path: sha1})."""
-    needed = referenced_files(rows)
     missing = sorted(p for p in needed if p not in local and p not in remote)
     if missing:
         raise HubError(
-            f"{len(missing)} referenced audio file(s) exist neither locally nor on "
-            f"the Hub, e.g. {missing[0]}"
+            f"{len(missing)} referenced file(s) exist neither locally nor on the Hub, "
+            f"e.g. {missing[0]}. Rebuild those sources locally and push again."
         )
     upload = sorted(p for p in needed if p in local and remote.get(p) != local[p])
     delete = sorted(p for p in remote if p not in needed)
     manifest = {p: local.get(p) or remote[p] for p in sorted(needed)}
     return upload, delete, manifest
+
+
+def plan_files(
+    rows: list[dict[str, Any]], local: dict[str, str], remote: dict[str, str]
+) -> tuple[list[str], list[str], dict[str, str]]:
+    """File layout: every clip and reference is its own audio file."""
+    return plan_paths(referenced_files(rows), local, remote)
 
 
 def check_registry_lineage(
@@ -204,25 +217,52 @@ def _csv_bytes(rows: list[dict[str, Any]], columns: list[str]) -> bytes:
     return buf.getvalue().encode()
 
 
-def _card(repo: str, totals: dict[str, Any], sample_rate: int) -> bytes:
+def _card(repo: str, totals: dict[str, Any], sample_rate: int, layout: str) -> bytes:
+    name = repo.split("/")[-1]
+    if layout == "parquet":
+        data_files = "  data_files:\n  - split: train\n    path: data/*.parquet"
+        usage = f"""```python
+from datasets import load_dataset
+
+ds = load_dataset("{repo}", split="train")
+row = ds[0]
+row["audio"]       # {{"array": ..., "sampling_rate": {sample_rate}}}: the utterance
+row["ref_audio"]   # a different clip of the same speaker (voice prompt)
+row["text"], row["speaker_id"], row["ref_text"]
+```"""
+        layout_note = (
+            "Audio is stored in Parquet shards under `data/` (one per source) with `audio` "
+            "and `ref_audio` columns."
+        )
+    else:
+        data_files = "  data_files: metadata.csv"
+        usage = f"""```python
+from huggingface_hub import snapshot_download
+import pandas as pd, soundfile as sf
+
+root = snapshot_download("{repo}", repo_type="dataset")
+meta = pd.read_csv(f"{{root}}/metadata.csv")
+audio, sr = sf.read(f"{{root}}/" + meta.audio_path[0])
+```"""
+        layout_note = "Audio files live under `wavs/` (utterances) and `refs/` (prompts)."
     return f"""---
-pretty_name: {repo.split("/")[-1]}
+pretty_name: {name}
 task_categories:
 - text-to-speech
 tags:
 - audio
 - speech
 - voice-cloning
-- soundakira
 configs:
 - config_name: default
-  data_files: metadata.csv
+{data_files}
 ---
 
-# {repo.split("/")[-1]}
+# {name}
 
-Speaker-labelled speech for zero-shot TTS / voice cloning, built and maintained
-with [soundAkira](https://github.com/nullHawk/soundAkira).
+Speaker-labelled speech for zero-shot TTS and voice cloning. Every example is a
+single-speaker utterance with its transcript, plus a reference prompt: a
+different clip of the same speaker.
 
 | | |
 |---|---|
@@ -232,21 +272,97 @@ with [soundAkira](https://github.com/nullHawk/soundAkira).
 | sources | {totals["num_sources"]} |
 | sample rate | {sample_rate} Hz |
 
-Each row of `metadata.csv` / `metadata.jsonl` is one single-speaker utterance
-(`audio_path`, `text`, `speaker_id`) with a reference prompt of the same voice
-(`ref_audio_path`, `ref_text`) and quality metrics. Speaker IDs are stable
-across updates (`speaker_registry.json`); `speakers.csv` summarises them and
-`manifest.json` records the update history.
+{layout_note} Speaker IDs are stable across updates (`speaker_registry.json`),
+`speakers.csv` summarises the speakers, `metadata.jsonl` holds per-utterance
+metadata and quality metrics, and `manifest.json` records the update history.
 
-```python
-from huggingface_hub import snapshot_download
-import pandas as pd, soundfile as sf
-
-root = snapshot_download("{repo}", repo_type="dataset")
-meta = pd.read_csv(f"{{root}}/metadata.csv")
-audio, sr = sf.read(f"{{root}}/" + meta.audio_path[0])
-```
+{usage}
 """.encode()
+
+
+PARQUET_FIELDS: list[tuple[str, str]] = [
+    ("utt_id", "string"),
+    ("audio", "audio"),
+    ("text", "string"),
+    ("text_tagged", "string"),
+    ("speaker_id", "int64"),
+    ("speaker_name", "string"),
+    ("language", "string"),
+    ("duration", "float64"),
+    ("split", "string"),
+    ("source_id", "string"),
+    ("source_url", "string"),
+    ("source_start", "float64"),
+    ("source_end", "float64"),
+    ("num_speakers_in_source", "int64"),
+    ("ref_id", "string"),
+    ("ref_audio", "audio"),
+    ("ref_text", "string"),
+    ("ref_duration", "float64"),
+    ("ref_source_id", "string"),
+    ("metrics", "string"),
+    ("words", "string"),
+]
+_ROW_KEYS = set(BASE_COLUMNS) | {"words", "shard", "split"}
+
+
+def write_parquet_shard(
+    rows: list[dict[str, Any]], out_dir: Path, sample_rate: int, dest: Path
+) -> None:
+    """One shard with Hugging Face `Audio` columns (the Hub viewer renders them as
+    players, and `load_dataset` decodes them). The schema is fixed; variable
+    metrics go in a JSON column, so shards written by different versions still
+    concatenate."""
+    import pyarrow as pa
+    import pyarrow.parquet as pq
+
+    audio_type = pa.struct([("bytes", pa.binary()), ("path", pa.string())])
+    arrow = {
+        "string": pa.string(),
+        "int64": pa.int64(),
+        "float64": pa.float64(),
+        "audio": audio_type,
+    }
+
+    def audio(rel: str | None) -> dict[str, Any] | None:
+        if not rel:
+            return None
+        return {"bytes": (out_dir / rel).read_bytes(), "path": Path(rel).name}
+
+    def value(r: dict[str, Any], name: str) -> Any:
+        if name == "audio":
+            return audio(r["audio_path"])
+        if name == "ref_audio":
+            return audio(r.get("ref_audio_path"))
+        if name == "source_url":
+            uri = r.get("source_uri") or ""
+            return uri if uri.startswith(("http://", "https://")) else None
+        if name == "metrics":
+            return json.dumps({k: v for k, v in r.items() if k not in _ROW_KEYS}, sort_keys=True)
+        if name == "words":
+            return json.dumps(r.get("words", []), ensure_ascii=False)
+        v = r.get(name)
+        return None if v in ("", None) else v
+
+    features = {
+        name: {"sampling_rate": sample_rate, "_type": "Audio"}
+        if kind == "audio"
+        else {"dtype": kind, "_type": "Value"}
+        for name, kind in PARQUET_FIELDS
+    }
+    schema = pa.schema(
+        [pa.field(name, arrow[kind]) for name, kind in PARQUET_FIELDS],
+        metadata={"huggingface": json.dumps({"info": {"features": features}})},
+    )
+    table = pa.table(
+        {name: [value(r, name) for r in rows] for name, _ in PARQUET_FIELDS}, schema=schema
+    )
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    pq.write_table(table, dest, compression="zstd")
+
+
+def shard_path(source_id: str) -> str:
+    return f"data/{source_id}.parquet"
 
 
 @dataclass
@@ -284,9 +400,9 @@ def push(
     dry_run: bool = False,
     message: str | None = None,
 ) -> PushReport:
-    repo = cfg.hub.resolved_repo_id() or ""
     backend = backend or backend_for(cfg)
     out = cfg.output_dir
+    layout = cfg.hub.audio_layout
     meta_path = out / "metadata.jsonl"
     if not meta_path.exists():
         raise HubError(f"{meta_path} not found: run `soundakira build` (with export.write_jsonl)")
@@ -296,14 +412,16 @@ def push(
     registry_path = cfg.work_dir / "speakers" / "registry.json"
     local_registry = read_json(registry_path) if registry_path.exists() else {}
 
+    # Resolve first (this also follows a rename): creating the repo up front
+    # would make a new empty repo under the old, now-free name.
+    head = backend.head()
+    if head is None and not dry_run:
+        backend.ensure_repo(cfg.hub.private)
+        head = backend.head()
+    repo = getattr(backend, "repo_id", None) or cfg.hub.resolved_repo_id() or ""
     who = getattr(backend, "whoami", None)
     if who is not None:
-        log.info(
-            "Hub account: %s -> %s (%s)", who(), repo, "private" if cfg.hub.private else "public"
-        )
-    if not dry_run:
-        backend.ensure_repo(cfg.hub.private)
-    head = backend.head()
+        log.info("Hub account: %s -> %s", who(), repo)
     remote_meta = backend.read("metadata.jsonl", head) if head else None
     remote_rows = (
         [json.loads(x) for x in remote_meta.decode().splitlines() if x.strip()]
@@ -326,14 +444,33 @@ def push(
     )
     for r in merged:
         r["split"] = "test" if int(r["speaker_id"]) in test else "train"
-    local_files = {p: _sha1(out / p) for p in referenced_files(local_rows) if (out / p).exists()}
-    upload, delete, files = plan_files(merged, local_files, remote_manifest.get("files", {}))
+
+    # What the repo should contain, and the local files that provide it.
+    staged: dict[str, Path] = {}
+    if layout == "parquet":
+        for r in merged:
+            r["shard"] = shard_path(r["source_id"])
+        needed = {r["shard"] for r in merged}
+        stage_dir = out / ".hub_shards"
+        shutil.rmtree(stage_dir, ignore_errors=True)
+        for sid in sorted(local_sources):
+            rows_s = [r for r in merged if r["source_id"] == sid]
+            if rows_s:
+                dest = stage_dir / f"{sid}.parquet"
+                write_parquet_shard(rows_s, out, cfg.export.sample_rate, dest)
+                staged[shard_path(sid)] = dest
+    else:
+        needed = referenced_files(merged)
+        staged = {p: out / p for p in referenced_files(local_rows) if (out / p).exists()}
+    local_hashes = {p: _sha1(f) for p, f in staged.items()}
+    upload, delete, files = plan_paths(needed, local_hashes, remote_manifest.get("files", {}))
 
     speakers = summary.speaker_rows(merged)
     totals = summary.totals(merged, speakers)
     report = PushReport(repo, len(upload), len(delete), len(merged), len(speakers), 0, dry_run)
     log.info(
-        "push plan: %d rows (%d local), upload %d files, delete %d",
+        "push plan (%s layout): %d rows (%d local), upload %d files, delete %d",
+        layout,
         len(merged),
         len(local_rows),
         len(upload),
@@ -342,12 +479,13 @@ def push(
     if dry_run:
         return report
 
-    metric_cols = sorted({k for r in merged for k in r} - set(BASE_COLUMNS) - {"words"})
+    metric_cols = sorted({k for r in merged for k in r} - set(BASE_COLUMNS) - {"words", "shard"})
     history = [
         *remote_manifest.get("history", []),
         {
             "time": now_iso(),
-            "soundakira_version": __version__,
+            "pipeline_version": __version__,
+            "layout": layout,
             "sources": sorted(local_sources),
             "local_utterances": len(local_rows),
             "uploaded": len(upload),
@@ -357,17 +495,19 @@ def push(
     ]
     dataset_json = {
         "updated_at": now_iso(),
-        "soundakira_version": __version__,
+        "pipeline_version": __version__,
         **totals,
         "sample_rate": cfg.export.sample_rate,
+        "audio_layout": layout,
     }
+    csv_cols = BASE_COLUMNS + (["shard"] if layout == "parquet" else []) + metric_cols
     final: dict[str, Path | bytes] = {
         "metadata.jsonl": _jsonl(merged),
-        "metadata.csv": _csv_bytes(merged, BASE_COLUMNS + metric_cols),
+        "metadata.csv": _csv_bytes(merged, csv_cols),
         "speakers.csv": _csv_bytes(speakers, summary.SPEAKER_COLUMNS),
         "dataset.json": json.dumps(dataset_json, indent=2).encode(),
         "manifest.json": json.dumps({"files": files, "history": history}, indent=1).encode(),
-        "README.md": _card(repo, totals, cfg.export.sample_rate),
+        "README.md": _card(repo, totals, cfg.export.sample_rate, layout),
     }
     if registry_path.exists():
         final["speaker_registry.json"] = registry_path.read_bytes()
@@ -376,14 +516,14 @@ def push(
     batches = [upload[i : i + n] for i in range(0, len(upload), n)]
     for k, batch in enumerate(batches, 1):
         parent = backend.commit(
-            {p: out / p for p in batch}, [], f"soundakira: audio {k}/{len(batches)}", parent
+            {p: staged[p] for p in batch}, [], f"Add audio ({k}/{len(batches)})", parent
         )
         report.commits += 1
     parent = backend.commit(
         final,
         delete,
         message
-        or f"soundakira: +{len(local_rows)} utterances from {len(local_sources)} "
+        or f"Update dataset: +{len(local_rows)} utterances from {len(local_sources)} "
         f"source(s), {len(merged)} total",
         parent,
     )

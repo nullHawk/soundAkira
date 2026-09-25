@@ -190,6 +190,9 @@ class HubConfig(_Strict):
     private: bool = True
     branch: str = "main"
     sync_registry: bool = True  # `build` pulls speaker_registry.json from the Hub first
+    # parquet: one shard per source with Audio columns (Hub viewer players,
+    # `load_dataset` decoding). files: loose wav files + metadata.csv.
+    audio_layout: Literal["parquet", "files"] = "parquet"
     commit_batch_size: int = 500
 
     def resolved_repo_id(self) -> str | None:

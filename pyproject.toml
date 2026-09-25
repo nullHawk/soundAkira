@@ -42,11 +42,11 @@ parakeet = ["nemo_toolkit[asr]>=2.4"]
 align = ["whisperx>=3.3"]
 quality = ["torchmetrics[audio]>=1.4", "onnxruntime>=1.17", "librosa>=0.10"]
 audioset = ["transformers>=4.40"]
-hub = ["huggingface_hub>=0.24"]
+hub = ["huggingface_hub>=0.24", "pyarrow>=14"]
 # The default pipeline: yt-dlp + RoFormer separation + Silero + pyannote + faster-whisper
 # + AudioSet singing/music detection.
 standard = ["soundakira[fetch,separation,vad,diarization,asr,audioset,hub]"]
-dev = ["pytest>=8", "ruff>=0.6", "mypy>=1.10", "pre-commit>=3.7", "types-PyYAML"]
+dev = ["pytest>=8", "ruff>=0.6", "mypy>=1.10", "pre-commit>=3.7", "types-PyYAML", "pyarrow>=14"]
 
 [project.scripts]
 soundakira = "soundakira.cli:app"
