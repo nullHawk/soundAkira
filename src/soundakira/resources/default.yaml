@@ -6,6 +6,7 @@
 work_dir: work          # per-source intermediate artifacts (resumable cache)
 output_dir: dataset     # final dataset
 device: auto            # auto | cpu | cuda | cuda:N | mps
+cache_dir: null         # model caches (e.g. converted ASR models); null = ~/.cache/soundakira
 hf_token: null          # falls back to $HF_TOKEN (pyannote models are gated)
 
 fetch:                  # remote sources (YouTube, any yt-dlp site, direct media links)

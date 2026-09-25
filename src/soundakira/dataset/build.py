@@ -123,7 +123,7 @@ def build_dataset(
     cfg: PipelineConfig, ctx: ComponentContext | None = None, clean: bool = False
 ) -> BuildReport:
     ctx = ctx or ComponentContext(
-        device=resolve_device(cfg.device), hf_token=cfg.resolved_hf_token()
+        device=resolve_device(cfg.device), hf_token=cfg.resolved_hf_token(), cache_dir=cfg.cache_dir
     )
     sp, exp, refcfg = cfg.speakers, cfg.export, cfg.references
     drops: Counter[str] = Counter()

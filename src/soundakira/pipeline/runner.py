@@ -60,7 +60,9 @@ class Runner:
     def __init__(self, cfg: PipelineConfig, ctx: ComponentContext | None = None):
         self.cfg = cfg
         self.ctx = ctx or ComponentContext(
-            device=resolve_device(cfg.device), hf_token=cfg.resolved_hf_token()
+            device=resolve_device(cfg.device),
+            hf_token=cfg.resolved_hf_token(),
+            cache_dir=cfg.cache_dir,
         )
 
     def prepare(self, sources: Iterable[Source]) -> list[SourceWorkspace]:

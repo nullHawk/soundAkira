@@ -211,6 +211,9 @@ class PipelineConfig(_Strict):
     work_dir: Path = Path("work")
     output_dir: Path = Path("dataset")
     device: str = "auto"
+    cache_dir: Path | None = (
+        None  # model caches (converted ASR models, ...); default ~/.cache/soundakira
+    )
     hf_token: str | None = None
     fetch: FetchConfig = Field(default_factory=FetchConfig)
     extract: ExtractConfig = Field(default_factory=ExtractConfig)
