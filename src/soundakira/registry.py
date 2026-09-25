@@ -50,6 +50,7 @@ _BUILTINS: dict[str, dict[str, str]] = {
     },
     "aligner": {
         "whisperx": "soundakira.components.aligners.whisperx:WhisperXAligner",
+        "ctc": "soundakira.components.aligners.ctc:CTCAligner",
     },
     "embedder": {
         "pyannote": "soundakira.components.embedders.pyannote:PyannoteEmbedder",
