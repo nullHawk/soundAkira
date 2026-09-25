@@ -36,6 +36,7 @@ MEDIA_EXTENSIONS = frozenset(
     {
         ".mp4",
         ".mkv",
+        ".mka",
         ".mov",
         ".avi",
         ".webm",
@@ -53,6 +54,12 @@ MEDIA_EXTENSIONS = frozenset(
         ".ogg",
         ".opus",
         ".wma",
+        ".aiff",
+        ".aif",
+        ".ac3",
+        ".eac3",
+        ".dts",
+        ".amr",
     }
 )
 MANIFEST_EXTENSIONS = frozenset({".txt", ".csv", ".tsv", ".jsonl", ".list"})

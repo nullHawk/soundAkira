@@ -143,3 +143,11 @@ def test_parse_audio_streams():
     }
     [s] = parse_audio_streams(probe)
     assert s.index == 0 and s.language == "eng" and s.is_default and s.channels == 6
+
+
+def test_audio_only_containers_are_discovered(tmp_path):
+    # e.g. an English track copied out of an .mkv with `-c:a copy` -> .mka
+    for name in ("show_s01e01.mka", "show_s01e02.m4a", "show_s01e03.opus", "notes.txt"):
+        (tmp_path / name).write_bytes(b"x" * 64)
+    found = sorted(s.uri.rsplit("/", 1)[-1] for s in resolve_inputs([str(tmp_path)]))
+    assert found == ["show_s01e01.mka", "show_s01e02.m4a", "show_s01e03.opus"]
