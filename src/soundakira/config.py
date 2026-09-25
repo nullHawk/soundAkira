@@ -106,6 +106,9 @@ class SpeakerConfig(_Strict):
     purity_threshold: float = 0.45
     min_local_duration: float = 20.0
     registry_match_similarity: float = 0.6
+    intruder_window: float = 1.5
+    intruder_hop: float = 0.75
+    intruder_margin: float = 0.1
     anchors_dir: Path | None = None
     anchor_threshold: float = 0.55
 
@@ -120,6 +123,8 @@ def _default_target_filters() -> list[FilterRule]:
         FilterRule(field="speaker_similarity", min=0.45),
         FilterRule(field="clip_ratio", max=0.001),
         FilterRule(field="speech_prob", min=0.15),
+        FilterRule(field="intruder_s", max=0.0),
+        FilterRule(field="other_speaker_s", max=0.3),
         FilterRule(field="singing_prob", max=0.5),
     ]
 
@@ -133,6 +138,8 @@ def _default_reference_filters() -> list[FilterRule]:
         FilterRule(field="speaker_similarity", min=0.6),
         FilterRule(field="clip_ratio", max=0.001),
         FilterRule(field="speech_prob", min=0.15),
+        FilterRule(field="intruder_s", max=0.0),
+        FilterRule(field="other_speaker_s", max=0.3),
         FilterRule(field="singing_prob", max=0.5),
     ]
 

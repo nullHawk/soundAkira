@@ -32,10 +32,11 @@ from soundakira.dataset.speakers import (
     apply_anchors,
     build_clusters,
     cluster_centroids,
+    intruder_stats,
     l2norm,
     local_centroid,
 )
-from soundakira.pipeline.stages import load_embeddings, load_segments
+from soundakira.pipeline.stages import load_embeddings, load_segments, load_window_embeddings
 from soundakira.pipeline.workspace import SourceWorkspace, list_workspaces, now_iso
 from soundakira.sources.resolve import MEDIA_EXTENSIONS
 from soundakira.types import Segment
@@ -136,11 +137,13 @@ def build_dataset(
     num_speakers_in_source: dict[str, int] = {}
     segments: list[Segment] = []
     embeddings: dict[str, np.ndarray] = {}
+    window_embeddings: dict[str, np.ndarray] = {}
     allowed = {normalize_language(x) for x in exp.languages} if exp.languages else None
     for ws in workspaces:
         ws_by_source[ws.source_id] = ws
         scores = read_json(ws.scores_json)
         embeddings.update(load_embeddings(ws))
+        window_embeddings.update(load_window_embeddings(ws))
         num_speakers_in_source[ws.source_id] = read_json(ws.diarization_json)["num_speakers"]
         for seg in load_segments(ws):
             seg.metrics.update(scores.get(seg.segment_id, {}))
@@ -159,10 +162,12 @@ def build_dataset(
             drops["no_embedding"] += 1
     locals_: list[LocalSpeaker] = []
     local_key_of: dict[str, str] = {}
+    source_centroids: dict[str, dict[str, np.ndarray]] = defaultdict(dict)
     for (source_id, label), segs in sorted(groups.items()):
         emb = np.stack([embeddings[s.segment_id] for s in segs])
         durations = np.array([s.duration for s in segs])
         centroid, sims = local_centroid(emb, durations, sp.purity_threshold)
+        source_centroids[source_id][label] = centroid
         for s, sim in zip(segs, sims):
             s.metrics["speaker_similarity"] = round(float(sim), 5)
         pure = float(durations[sims >= sp.purity_threshold].sum())
@@ -198,6 +203,28 @@ def build_dataset(
         speaker_of[seg.segment_id] = sid
         e = l2norm(embeddings[seg.segment_id].astype(np.float64))
         seg.metrics["global_speaker_similarity"] = round(float(e @ centroid_of[sid]), 5)
+    # Second-voice detection: windows closer to *another person* in the same
+    # source. Other labels that clustering merged into the same global speaker
+    # (diarization splitting one person) don't count as other people.
+    for (source_id, label), segs in groups.items():
+        own_id = member_to_id.get(f"{source_id}:{label}")
+        others = [
+            c
+            for lab, c in source_centroids[source_id].items()
+            if lab != label and (own_id is None or member_to_id.get(f"{source_id}:{lab}") != own_id)
+        ]
+        own = source_centroids[source_id][label]
+        for s in segs:
+            if s.segment_id in window_embeddings:
+                secs, worst = intruder_stats(
+                    window_embeddings[s.segment_id],
+                    own,
+                    others,
+                    sp.intruder_margin,
+                    sp.intruder_hop,
+                )
+                s.metrics["intruder_s"] = round(secs, 3)
+                s.metrics["speaker_margin_min"] = round(worst, 5)
     eligible = [s for s in segments if s.segment_id in speaker_of]
 
     # -- targets + references ---------------------------------------------------

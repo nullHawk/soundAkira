@@ -161,3 +161,18 @@ def test_registry_ignores_permuted_labels_after_rediarization(tmp_path):
         [Cluster(lex, ["ep1:S0", "ep2:S1"], 50), Cluster(scull, ["ep2:S2"], 50)], 0.6
     )
     assert second == first  # IDs follow the voices, not the labels
+
+
+def test_intruder_stats_is_relative():
+    from soundakira.dataset.speakers import intruder_stats
+
+    own, other = unit(1, 0, 0), unit(0, 1, 0)
+    # Emotional speech: low similarity to everyone, but still closest to own.
+    shouting = np.stack([unit(0.5, 0.2, 0.8)] * 3)
+    assert intruder_stats(shouting, own, [other], 0.1, 0.75)[0] == 0.0
+    # One window really is the other speaker.
+    mixed = np.stack([unit(1, 0.1, 0), unit(0.1, 1, 0), unit(1, 0, 0.1)])
+    secs, worst = intruder_stats(mixed, own, [other], 0.1, 0.75)
+    assert secs == 0.75 and worst < -0.5
+    # Single-speaker source: nothing to compare against.
+    assert intruder_stats(mixed, own, [], 0.1, 0.75) == (0.0, 1.0)

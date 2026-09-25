@@ -69,6 +69,26 @@ def local_centroid(
     return centroid, e @ centroid
 
 
+def intruder_stats(
+    windows: np.ndarray, own: np.ndarray, others: list[np.ndarray], margin: float, hop: float
+) -> tuple[float, float]:
+    """(intruder seconds, minimum margin) for one clip's window embeddings.
+
+    A window is an intruder when it is closer to another local speaker of the
+    same source than to its own speaker by more than `margin`. This is a
+    *relative* test: shouting or whispering lowers similarity to every
+    centroid, but only a real second voice is specifically closer to someone
+    else.
+    """
+    if len(windows) == 0 or not others:
+        return 0.0, 1.0
+    w = l2norm(windows.astype(np.float64))
+    own_sim = w @ own
+    other_sim = np.max(np.stack([w @ o for o in others]), axis=0)
+    m = own_sim - other_sim
+    return float((m < -margin).sum() * hop), float(m.min())
+
+
 def cluster_centroids(
     centroids: np.ndarray, threshold: float, linkage: str = "average"
 ) -> np.ndarray:

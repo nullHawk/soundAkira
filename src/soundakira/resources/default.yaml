@@ -82,6 +82,11 @@ speakers:
   purity_threshold: 0.45        # segments less similar to their own speaker are flagged
   min_local_duration: 20.0      # a diarized speaker needs this much clean speech to be kept
   registry_match_similarity: 0.6  # keeps speaker IDs stable across rebuilds
+  # Second-voice check: 1.5 s windows that sound more like another speaker of
+  # the same source (by more than intruder_margin) count towards intruder_s.
+  intruder_window: 1.5
+  intruder_hop: 0.75
+  intruder_margin: 0.1
   anchors_dir: null             # optional: <dir>/<speaker name>/*.wav to name/merge speakers
   anchor_threshold: 0.55
 
@@ -101,6 +106,8 @@ references:             # voice prompts for zero-shot TTS
     - {field: speaker_similarity, min: 0.6}
     - {field: clip_ratio, max: 0.001}
     - {field: speech_prob, min: 0.15}     # drops songs: sung vocals score ~0.02, dialogue >= 0.3
+    - {field: intruder_s, max: 0.0}       # a window that sounds like another speaker
+    - {field: other_speaker_s, max: 0.3}  # diarization puts another speaker inside the clip
     - {field: singing_prob, max: 0.5}
 
 export:
@@ -123,6 +130,8 @@ export:
     - {field: speaker_similarity, min: 0.45}
     - {field: clip_ratio, max: 0.001}
     - {field: speech_prob, min: 0.15}     # drops songs: sung vocals score ~0.02, dialogue >= 0.3
+    - {field: intruder_s, max: 0.0}       # a window that sounds like another speaker
+    - {field: other_speaker_s, max: 0.3}  # diarization puts another speaker inside the clip
     - {field: singing_prob, max: 0.5}
   split:
     test_speaker_fraction: 0.0   # hold out whole speakers for unseen-voice evaluation

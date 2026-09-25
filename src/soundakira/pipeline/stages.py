@@ -311,7 +311,7 @@ class TranscribeStage(Stage):
 
 class SegmentStage(Stage):
     name = "segment"
-    version = "2"  # 2: speaker-change snapping, sentence trimming, lowercase-start check
+    version = "3"  # 2: snapping, sentence trimming, lowercase check; 3: other_speaker_s
     requires = ("vad", "diarize", "transcribe")
 
     def params(self) -> dict[str, Any]:
@@ -373,13 +373,30 @@ class ScoreStage(Stage):
         return {"num_scored": len(scores)}
 
 
+def window_slices(n: int, sr: int, window: float, hop: float) -> list[tuple[int, int]]:
+    """Sliding windows over n samples; a clip shorter than one window is one window."""
+    w, h = int(window * sr), max(1, int(hop * sr))
+    if n <= w:
+        return [(0, n)]
+    return [(i, i + w) for i in range(0, n - w + 1, h)]
+
+
 class EmbedStage(Stage):
+    """Whole-segment embeddings (speaker identity) plus sliding-window
+    embeddings (second-voice detection, see `intruder_stats`)."""
+
     name = "embed"
+    version = "2"  # 2: adds window embeddings
     requires = ("segment",)
     batch_size = 16
+    min_window_rms = 0.01  # skip near-silent windows: their embeddings are noise
 
     def build_components(self) -> list[Component]:
         return [self._make("embedder", self.cfg.speakers.embedder)]
+
+    def params(self) -> dict[str, Any]:
+        sp = self.cfg.speakers
+        return {"window": sp.intruder_window, "hop": sp.intruder_hop}
 
     def outputs(self, ws: SourceWorkspace) -> list[Path]:
         return [ws.embeddings_npz]
@@ -387,25 +404,69 @@ class EmbedStage(Stage):
     def run(self, ws: SourceWorkspace) -> dict[str, Any]:
         embedder = self.components[0]
         assert isinstance(embedder, SpeakerEmbedder)
+        sr = embedder.sample_rate
+        sp = self.cfg.speakers
         segments = load_segments(ws)
         ids: list[str] = []
         vecs: list[np.ndarray] = []
+        win_vecs: list[np.ndarray] = []
+        win_seg: list[int] = []
+        win_start: list[float] = []
         for i in range(0, len(segments), self.batch_size):
             batch = segments[i : i + self.batch_size]
-            clips = [_segment_clip(ws, s, embedder.sample_rate)[0] for s in batch]
-            vecs.append(embedder.embed(clips, embedder.sample_rate))
+            clips = [_segment_clip(ws, s, sr)[0] for s in batch]
+            vecs.append(embedder.embed(clips, sr))
             ids.extend(s.segment_id for s in batch)
+            windows, owners, starts = [], [], []
+            for j, clip in enumerate(clips):
+                for a, b in window_slices(len(clip), sr, sp.intruder_window, sp.intruder_hop):
+                    w = clip[a:b]
+                    if len(w) and float(np.sqrt(np.mean(w**2))) >= self.min_window_rms:
+                        windows.append(w)
+                        owners.append(i + j)
+                        starts.append(a / sr)
+            for k in range(0, len(windows), 64):
+                win_vecs.append(embedder.embed(windows[k : k + 64], sr))
+            win_seg.extend(owners)
+            win_start.extend(starts)
         emb = np.concatenate(vecs) if vecs else np.zeros((0, 0), np.float32)
+        wemb = (
+            np.concatenate(win_vecs) if win_vecs else np.zeros((0, emb.shape[1] if emb.size else 0))
+        )
         tmp = ws.embeddings_npz.with_name(".embeddings.tmp.npz")
         with open(tmp, "wb") as f:
-            np.savez(f, ids=np.array(ids, dtype=str), embeddings=emb.astype(np.float32))
+            np.savez(
+                f,
+                ids=np.array(ids, dtype=str),
+                embeddings=emb.astype(np.float32),
+                window_embeddings=wemb.astype(np.float32),
+                window_segment=np.array(win_seg, dtype=np.int32),
+                window_start=np.array(win_start, dtype=np.float32),
+            )
         os.replace(tmp, ws.embeddings_npz)
-        return {"num_embeddings": len(ids), "dim": int(emb.shape[1]) if emb.size else 0}
+        return {
+            "num_embeddings": len(ids),
+            "num_windows": len(win_seg),
+            "dim": int(emb.shape[1]) if emb.size else 0,
+        }
 
 
 def load_embeddings(ws: SourceWorkspace) -> dict[str, np.ndarray]:
     with np.load(ws.embeddings_npz) as data:
         return dict(zip(data["ids"].tolist(), data["embeddings"]))
+
+
+def load_window_embeddings(ws: SourceWorkspace) -> dict[str, np.ndarray]:
+    """segment_id -> (n_windows, D). Empty for artifacts written before v2."""
+    with np.load(ws.embeddings_npz) as data:
+        if "window_embeddings" not in data:
+            return {}
+        ids = data["ids"].tolist()
+        owners, wemb = data["window_segment"], data["window_embeddings"]
+        out: dict[str, list[np.ndarray]] = {}
+        for k, owner in enumerate(owners):
+            out.setdefault(ids[int(owner)], []).append(wemb[k])
+        return {sid: np.stack(v) for sid, v in out.items()}
 
 
 STAGES: list[type[Stage]] = [
